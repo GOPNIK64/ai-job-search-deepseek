@@ -6,6 +6,28 @@
 
 *The job search that runs on your machine.*
 
+> ### This is a fork: Claude Code → DeepSeek Harness
+>
+> Fork of [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search)
+> (MIT, © 2026 Mads Lorentzen) that **retargets the runtime to
+> [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) running
+> DeepSeek models**, instead of Claude Code.
+>
+> Everything that makes this work is upstream's: the job-application methodology
+> (`01..09`), the `/setup` `/scrape` `/rank` `/apply` `/interview` workflows, the portable
+> portal-skill contract, the Python verification tools, the fork-divergence tooling, and
+> the LaTeX templates. See [THANKS.md](THANKS.md). What this fork rewrites is the agent
+> layer — the prompts, which are written in Claude Code's tool vocabulary
+> (`WebSearch`/`WebFetch`/`Agent tool`/`allowed-tools`/`.claude/`) and are being ported to
+> a root `dsh` reads (`.agents/skills/`, `.dsh/skills/`).
+>
+> **Status: port in progress.** The portal skills already load in `dsh` unmodified; the
+> workflow layer is next.
+>
+> Not affiliated with, endorsed by, or sponsored by Anthropic, DeepSeek, or Mads
+> Lorentzen. Upstream is the reference implementation — if you don't need DeepSeek, use
+> [the original](https://github.com/MadsLorentzen/ai-job-search).
+
 <p align="center">
   <a href="https://trendshift.io/repositories/43622?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-43622" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/43622/daily" alt="MadsLorentzen%2Fai-job-search | Trendshift" width="250" height="55"/></a>
 </p>
