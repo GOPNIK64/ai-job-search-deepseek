@@ -207,6 +207,61 @@ OVERRIDES: dict[str, list[tuple[str, str]]] = {
             "`.agents/skills/` are shared by every runtime.",
         )
     ],
+    # MCP-dependent commands: the connection instructions named the other runtime's CLI
+    # (`claude mcp add/list`), its settings page, and its built-in `/mcp` command. None of
+    # those exist in dsh, which configures servers as an `mcpServers` list in the profile
+    # (verified: the bundle ships @deepseek-ai/dsh-mcp-client and validates that key). The
+    # replacement says where to configure a server without inventing a mechanism, and keeps
+    # upstream's intent: determine availability from the session's own tool list, never by
+    # shell-probing, and exit in one line.
+    "gmail-sync/SKILL.md": [
+        (
+            "Confirm the Gmail MCP tools (`mcp__claude_ai_Gmail__*`) are available. If not, "
+            "tell the user to connect the Gmail integration (claude.ai Settings → Connectors "
+            "→ Gmail) and stop - do not attempt this via Bash, IMAP, or any other channel.",
+            "Confirm that a Gmail MCP server's tools are available in this session (tool "
+            "names of the form `mcp__<server>__*`, exposing Gmail read and search calls). "
+            "Determine this from the session's own tool list **only** - never by probing for "
+            "a CLI, which interrupts the user with a permission prompt before any graceful "
+            "exit. If they are not available, tell the user in one line that this command "
+            "needs a Gmail MCP server configured in their harness, and that its OAuth login "
+            "happens in the harness rather than here - then stop. Do not attempt this via "
+            "shell, IMAP, or any other channel.",
+        ),
+    ],
+    "notion-sync/SKILL.md": [
+        (
+            "Determine this from the session's own tool list **only** - never by running "
+            "shell commands like `claude mcp list`, which would interrupt the user with a "
+            "permission prompt before the graceful exit. If the tools are not available, "
+            "stop and tell the user how to connect:",
+            "Determine this from the session's own tool list **only** - never by "
+            "shell-probing the harness for a server list, which would interrupt the user "
+            "with a permission prompt before the graceful exit. If the tools are not "
+            "available, stop and tell the user how to connect:",
+        ),
+        (
+            "> Notion MCP isn't connected. Run `claude mcp add --transport http notion "
+            "https://mcp.notion.com/mcp`, then start a **new session** (servers added "
+            "mid-session are only picked up on restart), run `/mcp` there to complete the "
+            "OAuth login, and re-run `/notion-sync`.",
+            "> Notion MCP isn't connected. Add the Notion MCP server (HTTP transport, "
+            "`https://mcp.notion.com/mcp`) to your harness's MCP configuration - in dsh "
+            "that is the `mcpServers` list in your profile config - then start a **new "
+            "session**, since servers added mid-session are only picked up on restart, and "
+            "complete the OAuth login there. Then re-run `/notion-sync`.",
+        ),
+        (
+            "An auth error → tell the user to re-authenticate via `/mcp` and stop. Never "
+            "retry in a loop.",
+            "An auth error → tell the user to re-authenticate the server in their "
+            "harness and stop. Never retry in a loop.",
+        ),
+        (
+            "the one line points at `/mcp` and the command ends there",
+            "the one line points at the harness's MCP settings and the command ends there",
+        ),
+    ],
 }
 
 

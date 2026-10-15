@@ -31,8 +31,15 @@ assert _spec is not None and _spec.loader is not None, "converter is not importa
 _converter = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_converter)
 
-# Tool vocabulary that belongs to Claude Code and has no place in the ported layer.
-CLAUDE_ONLY = re.compile(r"\bWebSearch\b|\bWebFetch\b|\bAskUserQuestion\b|^allowed-tools:", re.M)
+# Tool vocabulary that belongs to Claude Code and has no place in the ported layer. The
+# last four are instructions, not vocabulary: they tell the reader to run the other
+# runtime's CLI, open its settings page, look for its tool prefix, or type its built-in
+# `/mcp` command. A dsh user following any of them reaches a command that does not exist.
+CLAUDE_ONLY = re.compile(
+    r"\bWebSearch\b|\bWebFetch\b|\bAskUserQuestion\b|^allowed-tools:"
+    r"|\bclaude mcp\b|claude\.ai|mcp__claude_ai_|`/mcp`",
+    re.M,
+)
 
 # The commands that must exist as user-invocable skills, and the two layers that must
 # stay model-invocable instead (upstream's skills are model-triggered; its commands are
@@ -102,6 +109,17 @@ class PortedLayerIsReproducible(unittest.TestCase):
                         f"{path.relative_to(REPO)}:{n} still carries Claude Code "
                         f"vocabulary: {hit.group(0)!r}"
                     )
+
+    def test_mcp_commands_point_at_the_harness_not_at_claude(self):
+        """The negative check above only proves the old text is gone. This one proves the
+        replacement is there: a user whose MCP server is missing has to be told where to
+        configure it in *this* harness, or the graceful exit is a dead end."""
+        notion = (DST / "notion-sync" / "SKILL.md").read_text(encoding="utf-8")
+        gmail = (DST / "gmail-sync" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("`mcpServers`", notion)
+        self.assertIn("session's own tool list", gmail)
+        self.assertIn("a Gmail MCP server's tools", gmail)
 
     def test_frontmatter_carries_provenance(self):
         for path in sorted(DST.rglob("SKILL.md")):
