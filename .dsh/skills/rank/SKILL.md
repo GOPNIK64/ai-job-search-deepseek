@@ -40,7 +40,15 @@ python3 tools/rank_state.py candidates --limit 10          # add --all / --focus
 
 It applies the status filter (`new`, or any status with `--all`), the tracker exclusion (any company+role already in `job_search_tracker.csv` is out of scope regardless of flags - it has been applied to or consciously tracked), the focus filter, and `--limit`, then prints one compact object per candidate (`key`, `title`, `company`, `url`, `portal`, `deadline`, `posted_date`) plus the counts: `eligible`, `deferred` (eligible beyond the limit, kept at their current status so a later run continues the backlog), `excluded_by_tracker`.
 
-If it reports no candidates, say so ("Nothing new to rank - run /scrape to find fresh postings") and stop. If it exits with "not found", tell the user to run `/scrape` first and stop.
+If it exits with "not found", tell the user to run `/scrape` first and stop.
+
+If it reports no candidates, there is nothing to score, but already-ranked jobs still need Step 3's rule 6 expiry sweep. Run:
+
+```bash
+python3 tools/rank_state.py sweep --write
+```
+
+Skip profile loading and Steps 2-4 on this path: no jobs need fetching or scoring. Present a sweep-only Step 5 summary: say "Nothing new to rank", report `swept` and `newly_expired`, list `closing_soon` with deadlines and posting URLs, and report any `unparseable_deadlines` with their portals. Apply rule 6's same reporting and defensive-date rules. Then suggest `/scrape` for fresh postings and stop. An empty candidate batch, including one caused by a focus filter or tracker exclusion, never skips this sweep.
 
 Then read the scoring framework and profile **once**:
 - `.claude/skills/job-application-assistant/04-job-evaluation.md`
@@ -55,8 +63,8 @@ State how many jobs will be ranked and how many are deferred before proceeding.
 Dispatch parallel `general-purpose` agents via the **subagent** tool, ~5 jobs per agent (a single agent is fine for ≤5 jobs). Token-efficiency rules, consistent with `/apply`:
 
 - Pass each agent everything it needs **inline in the prompt** - the job list (title, company, URL) and a compact scoring rubric extracted from the files you read in Step 1: the strong/moderate/weak skill match areas, direct/adjacent experience domains, behavioral thrive/drain factors, career goals, deal-breakers, and the location constraints. Do **not** make agents re-read the profile files.
-- Agents fetch each posting URL with web_fetch and score **only from actually fetched content**. If a URL is dead, redirects to a listing page, or the posting has expired, the agent marks that job `expired` - it never scores from the title alone and never fabricates posting content.
-- **Before marking anything `expired`, the agent must exhaust the escalation order** in `.claude/skills/job-application-assistant/09-web-research.md`: a `web_fetch` 403 is a rejected *client*, not a missing page, and retrying with browser headers via curl recovers most corporate and bank domains. A stored URL ending in a `#fragment` points at a listing page rather than a posting, so the agent should search the employer's own careers site for the role by name before writing the job off. Include this instruction in every scoring agent's prompt. `expired` means "retrieval genuinely failed after retrying", not "the first fetch was unhelpful".
+- Agents fetch each posting URL following the escalation order in `.claude/skills/job-application-assistant/09-web-research.md` (using the installed portal CLI's `detail` command when the URL belongs to a portal in `.agents/skills/`, or `web_fetch` otherwise) and score **only from actually fetched content**. If a URL is dead, redirects to a listing page, or the posting has expired, the agent marks that job `expired` - it never scores from the title alone and never fabricates posting content.
+- **Before marking anything `expired`, the agent must exhaust the escalation order** in `09-web-research.md`: installed portal CLI first, then `web_fetch`, then curl with browser headers (if `robots.txt` permits), then search for the employer's own careers site. A `web_fetch` 403 is a rejected *client*, not a missing page, and retrying with browser headers via curl recovers most corporate and bank domains. A stored URL ending in a `#fragment` points at a listing page rather than a posting, so the agent should search the employer's own careers site for the role by name before writing the job off. Include this instruction in every scoring agent's prompt. `expired` means "retrieval genuinely failed after retrying", not "the first fetch was unhelpful".
 - Scope is triage: posting text vs. rubric. **No company research, no salary lookup, no web searches** - that depth belongs to `/apply`.
 
 Each agent returns a JSON array, one object per job:
