@@ -173,6 +173,35 @@ class PortedLayerIsReproducible(unittest.TestCase):
             )
 
 
+def converted_unoverridden() -> dict[str, str]:
+    """The generated text before judgement edits, for the unused-override check."""
+    out: dict[str, str] = {}
+    for src in sorted(SRC.rglob("SKILL.md")):
+        rel = src.relative_to(SRC).as_posix()
+        text, _ = _converter.convert(src.read_text(encoding="utf-8"), rel)
+        out[_converter.output_rel(rel)] = text
+    for src in sorted(CMDS.glob("*.md")):
+        text, _ = _converter.convert_command(src.read_text(encoding="utf-8"), src.stem)
+        out[f"{src.stem}/SKILL.md"] = text
+    return out
+
+
+class JudgementEditsStillApply(unittest.TestCase):
+    """A missed override is invisible to the reproducibility test, which compares the layer
+    against the same converter and would lose the edit on both sides while still reporting
+    OK. Only this check notices that a correction stopped applying."""
+
+    def test_every_judgement_override_still_matches(self):
+        missed = _converter.unused_overrides(converted_unoverridden())
+
+        self.assertEqual(
+            missed,
+            [],
+            "these judgement edits no longer apply, so the correction they carry is "
+            "silently gone: " + ", ".join(rel for rel, _ in missed),
+        )
+
+
 class LayerBoundaryTests(unittest.TestCase):
     """Dispatchers are generated; content is not.
 

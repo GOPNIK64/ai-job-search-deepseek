@@ -289,6 +289,32 @@ def apply_overrides(text: str, out_rel: str, counts: dict[str, int]) -> str:
     return text
 
 
+def unused_overrides(pre_override: dict[str, str]) -> list[tuple[str, str]]:
+    """Judgement edits whose anchor text is no longer there.
+
+    A judgement edit is keyed to an exact passage, so when upstream rewrites that passage
+    the override stops applying *silently* — and the reproducibility test cannot notice,
+    because it compares the generated layer against this same converter and would lose the
+    edit on both sides at once. That is how a deliberate correction turns back into the
+    upstream text without anyone approving it.
+
+    `pre_override` maps output paths to the converted text *before* overrides are applied.
+    The caller reports anything returned here and fails, which forces the decision the
+    upstream change made necessary: rewrite the anchor, or delete the override because its
+    reason is gone.
+    """
+    missed: list[tuple[str, str]] = []
+    for rel, pairs in OVERRIDES.items():
+        text = pre_override.get(rel)
+        if text is None:
+            missed.append((rel, "(no such file in the generated layer)"))
+            continue
+        for old, _new in pairs:
+            if old not in text:
+                missed.append((rel, old))
+    return missed
+
+
 def _report(rel: str, counts: dict[str, int], totals: dict[str, int]) -> None:
     for k, v in counts.items():
         totals[k] = totals.get(k, 0) + v
@@ -305,6 +331,7 @@ def main() -> int:
     totals: dict[str, int] = {}
     written = 0
     expected: set[pathlib.Path] = set()
+    pre_override: dict[str, str] = {}
 
     print("skills:")
     for src in sorted(SRC.rglob("SKILL.md")):
@@ -312,6 +339,7 @@ def main() -> int:
         out = DST / output_rel(src.relative_to(SRC).as_posix())
         out.parent.mkdir(parents=True, exist_ok=True)
         text, counts = convert(src.read_text(encoding="utf-8"), rel)
+        pre_override[output_rel(rel)] = text
         text = apply_overrides(text, rel, counts)
         out.write_text(text, encoding="utf-8")
         expected.add(out)
@@ -325,6 +353,7 @@ def main() -> int:
             out = DST / name / "SKILL.md"
             out.parent.mkdir(parents=True, exist_ok=True)
             text, counts = convert_command(src.read_text(encoding="utf-8"), name)
+            pre_override[f"{name}/SKILL.md"] = text
             text = apply_overrides(text, f"{name}/SKILL.md", counts)
             out.write_text(text, encoding="utf-8")
             expected.add(out)
@@ -350,6 +379,19 @@ def main() -> int:
         print("no substitutions — the upstream layer may have changed shape")
     else:
         print("totals:", totals)
+
+    missed = unused_overrides(pre_override)
+    if missed:
+        print(f"\nunused judgement overrides ({len(missed)}):")
+        for rel, snippet in missed:
+            print(f"  {rel}: {snippet!r}")
+        print(
+            "\nAn override whose anchor is gone is a correction that stopped applying, and\n"
+            "the suite cannot see it: it compares the layer against this converter, which\n"
+            "would lose the edit on both sides. Re-anchor it, or delete it if upstream's\n"
+            "change removed the reason for it."
+        )
+        return 1
     return 0
 
 
