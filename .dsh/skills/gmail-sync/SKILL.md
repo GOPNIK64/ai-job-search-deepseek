@@ -18,7 +18,7 @@ Follow these steps **in order**.
 
 ## Step 0: Prerequisites
 
-Confirm the Gmail MCP tools (`mcp__claude_ai_Gmail__*`) are available. If not, tell the user to connect the Gmail integration (claude.ai Settings → Connectors → Gmail) and stop - do not attempt this via Bash, IMAP, or any other channel.
+Confirm that a Gmail MCP server's tools are available in this session (tool names of the form `mcp__<server>__*`, exposing Gmail read and search calls). Determine this from the session's own tool list **only** - never by probing for a CLI, which interrupts the user with a permission prompt before any graceful exit. If they are not available, tell the user in one line that this command needs a Gmail MCP server configured in their harness, and that its OAuth login happens in the harness rather than here - then stop. Do not attempt this via shell, IMAP, or any other channel.
 
 ---
 
