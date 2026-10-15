@@ -7,7 +7,8 @@ divergence stays mechanical instead of hand-maintained — when upstream moves, 
 
     python3 tools/port_skills_to_dsh.py
 
-Reads  `.claude/skills/**`  ->  writes `.dsh/skills/**`
+    .claude/skills/**            ->  .dsh/skills/**               (model-invocable skills)
+    .claude/commands/<name>.md   ->  .dsh/skills/<name>/SKILL.md  (user-invocable commands)
 
 What it rewrites, and why each mapping is what it is:
 
@@ -18,11 +19,20 @@ What it rewrites, and why each mapping is what it is:
   identical to Claude Code's, so only four identifiers actually change.
 - Paths. The ported layer is self-referential: `.claude/skills/` becomes `.dsh/skills/`,
   and a `.claude/commands/<name>.md` reference becomes `.dsh/skills/<name>/SKILL.md`.
-- Frontmatter. `allowed-tools`, `context`, `sources` and `model` are Claude Code keys
-  with no dsh equivalent — dsh governs tool access through sandbox/permission presets
+- Frontmatter on skills. `allowed-tools`, `context`, `sources` and `model` are Claude Code
+  keys with no dsh equivalent — dsh governs tool access through sandbox/permission presets
   instead. They are dropped, and a `ported_from` line is added for provenance.
   `framework_version` is deliberately preserved: `tools/check_upstream_updates.py` reads
   it, and it is what keeps upstream tracking working on the ported copies.
+- Frontmatter on commands, which upstream's command files do not carry at all: a `name`, a
+  `description` taken from the file's own `# /name - Title` heading, `user-invocable: true`
+  and `disable-model-invocation: true`. That last key is the faithful mapping — Claude Code
+  commands are user-triggered only, never model-triggered — and it is also what stops the
+  model from firing the application pipeline on its own. dsh serves every user-invocable
+  skill into the composer's `/` menu.
+- `$ARGUMENTS`, Claude Code's substitution for the text typed after a slash command, has no
+  dsh equivalent: the `/` menu inserts a *reference* to the skill and the user's text
+  travels alongside it. The token becomes a phrase naming that argument.
 
 Not handled here, on purpose — these need judgement, not substitution:
 
@@ -45,6 +55,7 @@ REPO = (
 )
 SRC = REPO / ".claude" / "skills"
 DST = REPO / ".dsh" / "skills"
+CMDS = REPO / ".claude" / "commands"
 
 # Order matters: the prose form has to go before the bare identifier.
 RENAMES = [
@@ -63,13 +74,34 @@ PATH_MAPS = [
 FM_DROP = re.compile(r"^(allowed-tools|context|sources|model):.*\n", re.M)
 FM_NOTE = "ported_from: .claude/skills/{rel}\n"
 
+# `$ARGUMENTS`, possibly in backticks or emphasis.
+ARGUMENTS = re.compile(r"\**`?\$ARGUMENTS`?\**")
+ARG_PHRASE = "the argument supplied with this invocation"
+
+COMMAND_HEADING = re.compile(r"^#\s*/[a-z-]+\s*[-–—]\s*(.+?)\s*$", re.M)
+COMMAND_FM = """---
+name: {name}
+description: {desc}
+user-invocable: true
+disable-model-invocation: true
+ported_from: .claude/commands/{name}.md
+---
+
+"""
+
+
+def _sub(text: str, counts: dict[str, int], pattern: str, repl: str) -> str:
+    text, n = re.subn(pattern, repl, text)
+    if n:
+        counts[pattern] = counts.get(pattern, 0) + n
+    return text
+
 
 def convert(text: str, rel: str) -> tuple[str, dict[str, int]]:
+    """Port one upstream skill file."""
     counts: dict[str, int] = {}
     for pat, rep in RENAMES + PATH_MAPS:
-        text, n = re.subn(pat, rep, text)
-        if n:
-            counts[pat] = counts.get(pat, 0) + n
+        text = _sub(text, counts, pat, rep)
 
     if text.startswith("---\n"):
         end = text.find("\n---", 4)
@@ -87,23 +119,122 @@ def convert(text: str, rel: str) -> tuple[str, dict[str, int]]:
     return text, counts
 
 
+def command_description(text: str, name: str) -> str:
+    """Upstream command files carry no frontmatter; their heading names the job."""
+    m = COMMAND_HEADING.search(text)
+    if m:
+        return m.group(1)
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith(("#", "---", "<!--")):
+            return line[:110]
+    return name
+
+
+def convert_command(text: str, name: str) -> tuple[str, dict[str, int]]:
+    """Port one upstream command file into a user-invocable dsh skill."""
+    counts: dict[str, int] = {}
+    for pat, rep in RENAMES + PATH_MAPS:
+        text = _sub(text, counts, pat, rep)
+    text = _sub(text, counts, ARGUMENTS.pattern, ARG_PHRASE)
+    fm = COMMAND_FM.format(name=name, desc=command_description(text, name))
+    counts["frontmatter generated"] = 1
+    return fm + text.lstrip("\n"), counts
+
+
+# Judgement edits: decisions, not substitutions. Keyed by the output path relative to
+# .dsh/skills/. They live here rather than as hand edits to .dsh/ so the layer stays
+# reproducible — tests/test_port_skills_to_dsh.py fails on anything the converter would
+# not produce, and a hand edit would be silently reverted by the next run.
+OVERRIDES: dict[str, list[tuple[str, str]]] = {
+    # Upstream's rule names its own runtime, which is a preference rather than a
+    # methodology. The fork keeps the rule's substance (be specific, never claim a tool
+    # you have not used) and drops the upstream-specific name.
+    "apply/SKILL.md": [
+        (
+            "- Any mention of agentic coding or AI tooling must reference **Claude Code** by name",
+            "- Any mention of agentic coding or AI tooling must name the tooling by its real, "
+            'current name — **DeepSeek Harness** and DeepSeek models in this fork — never a '
+            'generic "AI tools", and never a tool the candidate has not actually used',
+        )
+    ],
+    "html-report/SKILL.md": [
+        (
+            '"Generated by Claude Code · ai-job-search · {ISO date}"',
+            '"Generated by ai-job-search-deepseek · DeepSeek Harness · {ISO date}"',
+        )
+    ],
+    # The onboarding greeting names the runtime to the user.
+    "setup/SKILL.md": [
+        (
+            "so Claude can evaluate job postings",
+            "so your assistant can evaluate job postings",
+        )
+    ],
+    # /add-portal scaffolds portal skills into .agents/skills/, which every runtime
+    # reads. Claude-only frontmatter keys would be dead weight there, and dsh reads
+    # only name and description.
+    "add-portal/SKILL.md": [
+        (
+            "include trigger phrases in English **and** the market's language; "
+            "`context: fork`; `allowed-tools: Bash(bun run skills/<name>/cli/src/cli.ts *)`.",
+            "include trigger phrases in English **and** the market's language. Keep it free "
+            "of runtime-specific keys (`context`, `allowed-tools`): the portal skills under "
+            "`.agents/skills/` are shared by every runtime.",
+        )
+    ],
+}
+
+
+def apply_overrides(text: str, out_rel: str, counts: dict[str, int]) -> str:
+    for old, new in OVERRIDES.get(out_rel, []):
+        if old in text:
+            counts["judgement overrides"] = counts.get("judgement overrides", 0) + text.count(old)
+            text = text.replace(old, new)
+    return text
+
+
+def _report(rel: str, counts: dict[str, int], totals: dict[str, int]) -> None:
+    for k, v in counts.items():
+        totals[k] = totals.get(k, 0) + v
+    if not counts:
+        return
+    shown = ", ".join(f"{k}×{v}" for k, v in counts.items() if k != "frontmatter generated")
+    print(f"  {rel:<46} {shown}" if shown else f"  {rel:<46} (generated frontmatter only)")
+
+
 def main() -> int:
     if not SRC.is_dir():
         print(f"missing source: {SRC}", file=sys.stderr)
         return 1
-    written = 0
     totals: dict[str, int] = {}
+    written = 0
+
+    print("skills:")
     for src in sorted(SRC.rglob("*.md")):
         rel = src.relative_to(SRC).as_posix()
         out = DST / src.relative_to(SRC)
         out.parent.mkdir(parents=True, exist_ok=True)
         text, counts = convert(src.read_text(encoding="utf-8"), rel)
+        text = apply_overrides(text, rel, counts)
         out.write_text(text, encoding="utf-8")
+        _report(rel, counts, totals)
         written += 1
-        for k, v in counts.items():
-            totals[k] = totals.get(k, 0) + v
-        if counts:
-            print(f"  {rel:<52} " + ", ".join(f"{k}×{v}" for k, v in counts.items()))
+
+    print("commands:")
+    if CMDS.is_dir():
+        for src in sorted(CMDS.glob("*.md")):
+            name = src.stem
+            out = DST / name / "SKILL.md"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            text, counts = convert_command(src.read_text(encoding="utf-8"), name)
+            text = apply_overrides(text, f"{name}/SKILL.md", counts)
+            out.write_text(text, encoding="utf-8")
+            _report(f"{name}", counts, totals)
+            written += 1
+    else:
+        print(f"  no commands directory at {CMDS}")
+
     print(f"\nfiles written: {written}")
     if not totals:
         print("no substitutions — the upstream layer may have changed shape")

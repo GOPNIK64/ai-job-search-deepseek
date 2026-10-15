@@ -1,13 +1,16 @@
 """The ported layer must be exactly what the converter produces.
 
-Two drifts this catches:
+Three drifts this catches:
 
 1. A hand edit to `.dsh/skills/**` that the converter would not reproduce — the next
    re-run would silently revert it, so the edit is a lie until the converter knows it.
-2. An upstream merge that changed `.claude/skills/**` without re-running the converter,
-   leaving the ported layer quietly behind the layer it derives from.
+   Judgement edits belong in `tools/port_skills_to_dsh.py`'s `OVERRIDES`, not in `.dsh/`.
+2. An upstream merge that changed `.claude/skills/**` or `.claude/commands/**` without
+   re-running the converter, leaving the ported layer quietly behind its source.
+3. A file in `.dsh/` whose source no longer exists — a command upstream deleted, or a
+   skill renamed there, both of which leave a dead skill in dsh's catalog.
 
-Both are invisible in a diff review and cheap to check mechanically.
+All three are invisible in a diff review and cheap to check mechanically.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SRC = REPO / ".claude" / "skills"
+CMDS = REPO / ".claude" / "commands"
 DST = REPO / ".dsh" / "skills"
 
 _spec = importlib.util.spec_from_file_location(
@@ -30,18 +34,45 @@ _spec.loader.exec_module(_converter)
 # Tool vocabulary that belongs to Claude Code and has no place in the ported layer.
 CLAUDE_ONLY = re.compile(r"\bWebSearch\b|\bWebFetch\b|\bAskUserQuestion\b|^allowed-tools:", re.M)
 
+# The commands that must exist as user-invocable skills, and the two layers that must
+# stay model-invocable instead (upstream's skills are model-triggered; its commands are
+# not, and the port has to preserve that split or the model can start /apply by itself).
+MODEL_INVOCABLE = {"job-application-assistant", "job-scraper", "upskill"}
+
+
+def expected_outputs() -> dict[str, str]:
+    """Mirror main(): every file the converter would write, with its exact contents."""
+    out: dict[str, str] = {}
+    for src in sorted(SRC.rglob("*.md")):
+        rel = src.relative_to(SRC).as_posix()
+        text, counts = _converter.convert(src.read_text(encoding="utf-8"), rel)
+        out[rel] = _converter.apply_overrides(text, rel, counts)
+    for src in sorted(CMDS.glob("*.md")):
+        name = src.stem
+        text, counts = _converter.convert_command(src.read_text(encoding="utf-8"), name)
+        rel = f"{name}/SKILL.md"
+        out[rel] = _converter.apply_overrides(text, rel, counts)
+    return out
+
+
+def frontmatter(text: str) -> str:
+    if not text.startswith("---\n"):
+        return ""
+    end = text.find("\n---", 4)
+    return text[:end] if end != -1 else ""
+
 
 class PortedLayerIsReproducible(unittest.TestCase):
+    def setUp(self):
+        self.expected = expected_outputs()
+
     def test_layers_cover_the_same_files(self):
-        upstream = {p.relative_to(SRC).as_posix() for p in SRC.rglob("*.md")}
-        ported = {p.relative_to(DST).as_posix() for p in DST.rglob("*.md")}
-        self.assertTrue(ported, ".dsh/skills is empty — run tools/port_skills_to_dsh.py")
-        self.assertEqual(upstream, ported)
+        on_disk = {p.relative_to(DST).as_posix() for p in DST.rglob("*.md")}
+        self.assertTrue(on_disk, ".dsh/skills is empty — run tools/port_skills_to_dsh.py")
+        self.assertEqual(set(self.expected), on_disk)
 
     def test_every_ported_file_is_what_the_converter_produces(self):
-        for src in sorted(SRC.rglob("*.md")):
-            rel = src.relative_to(SRC).as_posix()
-            expected, _ = _converter.convert(src.read_text(encoding="utf-8"), rel)
+        for rel, expected in self.expected.items():
             on_disk = (DST / rel).read_text(encoding="utf-8")
             self.assertEqual(
                 expected,
@@ -66,13 +97,47 @@ class PortedLayerIsReproducible(unittest.TestCase):
 
     def test_frontmatter_carries_provenance(self):
         for path in sorted(DST.rglob("SKILL.md")):
-            text = path.read_text(encoding="utf-8")
-            if not text.startswith("---\n"):
+            fm = frontmatter(path.read_text(encoding="utf-8"))
+            if not fm:
                 continue
             self.assertIn(
                 "ported_from:",
-                text[: text.find("\n---", 4)],
+                fm,
                 f"{path.relative_to(REPO)} frontmatter is missing ported_from",
+            )
+
+    def test_commands_are_user_invocable_and_never_model_invoked(self):
+        """Upstream's commands are user-triggered only, and the port has to keep that.
+
+        A command the model can fire on its own turns /apply into something that starts
+        itself, which is the opposite of what the pipeline's review gate assumes.
+        """
+        names = sorted(p.stem for p in CMDS.glob("*.md"))
+        self.assertTrue(names, "no upstream commands found")
+        for name in names:
+            fm = frontmatter((DST / name / "SKILL.md").read_text(encoding="utf-8"))
+            self.assertIn(f"name: {name}", fm)
+            self.assertIn("user-invocable: true", fm)
+            self.assertIn("disable-model-invocation: true", fm)
+            self.assertRegex(fm, r"(?m)^description: \S")
+
+    def test_ported_skills_stay_model_invocable(self):
+        for name in sorted(MODEL_INVOCABLE):
+            fm = frontmatter((DST / name / "SKILL.md").read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "disable-model-invocation: true",
+                fm,
+                f"{name} is a model-triggered skill upstream; making it user-only would "
+                f"leave it unreachable from a normal conversation",
+            )
+
+    def test_no_upstream_arguments_token_survives(self):
+        for path in sorted(DST.rglob("*.md")):
+            self.assertNotIn(
+                "$ARGUMENTS",
+                path.read_text(encoding="utf-8"),
+                f"{path.relative_to(REPO)} still carries Claude Code's $ARGUMENTS, which "
+                f"dsh has no substitution for",
             )
 
 
