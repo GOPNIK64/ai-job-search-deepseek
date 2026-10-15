@@ -4,12 +4,14 @@
 Run from anywhere: python tools/lint_skills.py
 
 Checks:
-- Every SKILL.md (.claude/skills/*, .agents/skills/*) has YAML frontmatter that
-  parses, with non-empty `name` and `description` keys
+- Every SKILL.md (.claude/skills/*, .agents/skills/*, .dsh/skills/*) has YAML
+  frontmatter that parses, with non-empty `name` and `description` keys
 - `allowed-tools` entries of the form `Bash(bun run <path> *)` point at files
   that exist (skill paths resolve relative to the repo root and to .agents/)
 - Every .claude/commands/*.md starts with a `# /<name>` title
 - .claude/settings.json is valid JSON with a permissions.allow list
+- The ported dsh layer follows dsh's discovery rules: `<name>/SKILL.md` with a
+  kebab-case directory name, and nothing nested deeper (see check_dsh_skill_tree)
 
 Exit code 0 on success, 1 with a failure list otherwise.
 """
@@ -26,6 +28,9 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parent.parent
 errors: list[str] = []
+
+# dsh's documented skill identity: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+DSH_SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def rel(path: Path) -> str:
@@ -77,6 +82,39 @@ def check_command(path: Path) -> None:
         errors.append(f"{rel(path)}: command file must start with a '# /<name>' title (found: {first[:50]!r})")
 
 
+def check_dsh_skill_tree() -> int:
+    """Lint the ported layer against dsh's own discovery rules.
+
+    dsh discovers `<name>/SKILL.md` one level under a skill root and walks no deeper, so
+    two failure modes are silent in the app and loud here:
+
+    - a directory name that is not kebab-case, which is what dsh documents as skill
+      identity (^[a-z0-9]+(?:-[a-z0-9]+)*$)
+    - a SKILL.md nested two or more levels down, which dsh's provider never reaches: the
+      skill simply does not exist as far as the catalog is concerned
+
+    Returns the number of skills found, for the summary line.
+    """
+    root = ROOT / ".dsh" / "skills"
+    if not root.is_dir():
+        return 0
+    found = 0
+    for skill in sorted(root.glob("*/SKILL.md")):
+        found += 1
+        if not DSH_SKILL_NAME.match(skill.parent.name):
+            errors.append(
+                f"{rel(skill)}: directory name {skill.parent.name!r} is not kebab-case, "
+                f"which dsh requires for skill identity"
+            )
+        check_skill(skill)
+    for stray in sorted(root.glob("*/*/SKILL.md")):
+        errors.append(
+            f"{rel(stray)}: dsh does not discover a SKILL.md nested more than one level "
+            f"under .dsh/skills/ - this skill would never load"
+        )
+    return found
+
+
 def check_settings() -> None:
     path = ROOT / ".claude" / "settings.json"
     try:
@@ -107,6 +145,7 @@ def main() -> int:
         check_skill(skill)
     for command in commands:
         check_command(command)
+    dsh_skills = check_dsh_skill_tree()
     check_settings()
 
     if errors:
@@ -114,7 +153,10 @@ def main() -> int:
         for err in errors:
             print(f"  - {err}")
         return 1
-    print(f"lint_skills: OK ({len(skills)} skills, {len(commands)} commands, settings.json)")
+    print(
+        f"lint_skills: OK ({len(skills)} skills, {dsh_skills} dsh skills, "
+        f"{len(commands)} commands, settings.json)"
+    )
     return 0
 
 
