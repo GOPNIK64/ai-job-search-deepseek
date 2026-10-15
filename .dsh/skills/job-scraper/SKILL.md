@@ -107,7 +107,7 @@ proof the posting is open; deadlines and dead URLs remain `/rank`'s job.
 
 **From web_search results:** Use `web_fetch` on the posting URL and extract the same
 fields manually. If it returns HTTP 403, retry with browser headers via curl per
-`.dsh/skills/job-application-assistant/09-web-research.md` before giving up — most
+`.claude/skills/job-application-assistant/09-web-research.md` before giving up — most
 bank and corporate sites reject web_fetch's user agent while serving browsers normally.
 
 **Store a URL that actually resolves to the posting.** A listing-page URL with a

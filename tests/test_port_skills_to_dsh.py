@@ -43,7 +43,7 @@ MODEL_INVOCABLE = {"job-application-assistant", "job-scraper", "upskill"}
 def expected_outputs() -> dict[str, str]:
     """Mirror main(): every file the converter would write, with its exact contents."""
     out: dict[str, str] = {}
-    for src in sorted(SRC.rglob("*.md")):
+    for src in sorted(SRC.rglob("SKILL.md")):
         rel = src.relative_to(SRC).as_posix()
         text, counts = _converter.convert(src.read_text(encoding="utf-8"), rel)
         out[rel] = _converter.apply_overrides(text, rel, counts)
@@ -147,6 +147,47 @@ class PortedLayerIsReproducible(unittest.TestCase):
                 f"{path.relative_to(REPO)} still carries Claude Code's $ARGUMENTS, which "
                 f"dsh has no substitution for",
             )
+
+
+class LayerBoundaryTests(unittest.TestCase):
+    """Dispatchers are generated; content is not.
+
+    This is the invariant that keeps /setup's output alive. /setup writes the candidate
+    profile into `.claude/skills/job-application-assistant/01-`, `02-` and `04-` through
+    `07-`, and every command body writes newly confirmed facts back to `01-` as it runs.
+    If any of those lived in the generated layer, the next converter run would delete
+    them - silently, and with no copy anywhere else.
+    """
+
+    def test_the_generated_layer_holds_only_dispatchers(self):
+        for path in sorted(DST.rglob("*.md")):
+            self.assertEqual(
+                path.name,
+                "SKILL.md",
+                f"{path.relative_to(REPO)} is content in the generated layer; "
+                f"content belongs in .claude/, where the workflow writes it",
+            )
+
+    def test_setup_writes_outside_the_generated_layer(self):
+        setup = (DST / "setup" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            ".dsh/",
+            setup,
+            "the setup flow must not read or write inside the generated layer",
+        )
+        self.assertIn("search-queries.md", setup)
+
+    def test_command_references_still_resolve_after_the_un_remap(self):
+        """Paths that point at command dispatchers get remapped; paths that point at
+        content must not, or the reference dangles."""
+        for name in ("apply", "rank", "interview"):
+            text = (DST / name / "SKILL.md").read_text(encoding="utf-8")
+            for target in re.findall(r"`\.dsh/skills/([a-z-]+)/SKILL\.md`", text):
+                self.assertTrue(
+                    (DST / target).is_dir(),
+                    f"{name}/SKILL.md points at .dsh/skills/{target}/, which does not exist",
+                )
 
 
 if __name__ == "__main__":

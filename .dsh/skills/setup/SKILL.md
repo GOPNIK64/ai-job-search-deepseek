@@ -106,13 +106,13 @@ If every subfolder is empty, stop and tell the user to populate the folder. Poin
 
 Read these in parallel before extracting anything. You must know what is already there to make the merge intelligent.
 
-- `.dsh/skills/job-application-assistant/01-candidate-profile.md`
-- `.dsh/skills/job-application-assistant/02-behavioral-profile.md`
-- `.dsh/skills/job-application-assistant/03-writing-style.md`
-- `.dsh/skills/job-application-assistant/04-job-evaluation.md`
-- `.dsh/skills/job-application-assistant/05-cv-templates.md`
-- `.dsh/skills/job-application-assistant/06-cover-letter-templates.md`
-- `.dsh/skills/job-application-assistant/07-interview-prep.md`
+- `.claude/skills/job-application-assistant/01-candidate-profile.md`
+- `.claude/skills/job-application-assistant/02-behavioral-profile.md`
+- `.claude/skills/job-application-assistant/03-writing-style.md`
+- `.claude/skills/job-application-assistant/04-job-evaluation.md`
+- `.claude/skills/job-application-assistant/05-cv-templates.md`
+- `.claude/skills/job-application-assistant/06-cover-letter-templates.md`
+- `.claude/skills/job-application-assistant/07-interview-prep.md`
 
 Hold this content in context throughout Path A. Do not re-read.
 
@@ -255,7 +255,7 @@ Documents cover skills, experience, education, references, and behavioral signal
 - Commute or location constraints (if not visible from CV)
 - Job search configuration (use the questions from Path C Section 9 below)
 
-Then proceed to Step 3 to populate the non-skill files (`CLAUDE.md`, `cv/main_example.tex`, `.dsh/skills/job-scraper/search-queries.md`). Step 3 will detect that the seven skill files are already populated and skip those substeps.
+Then proceed to Step 3 to populate the non-skill files (`CLAUDE.md`, `cv/main_example.tex`, `.claude/skills/job-scraper/search-queries.md`). Step 3 will detect that the seven skill files are already populated and skip those substeps.
 
 ---
 
@@ -391,7 +391,7 @@ Create STAR examples from their actual experience (at least 3-4 examples). Path 
 ### 8. Update `cv/main_example.tex`
 Replace placeholder personal data with their actual name, contact info, and add their education and most recent experience entries.
 
-### 9. Generate `.dsh/skills/job-scraper/search-queries.md`
+### 9. Generate `.claude/skills/job-scraper/search-queries.md`
 Replace all placeholder tokens in the search queries file with the user's actual information from Section 9 (or the equivalent follow-up questions in Path A's Step A7):
 - Replace `[YOUR_PRIMARY_ROLE_TYPE]`, `[YOUR_PRIMARY_JOB_TITLE]`, etc. with actual role titles
 - Replace `[YOUR_KEY_SKILL]`, `[YOUR_DOMAIN_KEYWORD_1]`, etc. with actual skills and domain terms
@@ -412,14 +412,14 @@ Present a summary:
 > **Setup complete!** Here's what was generated:
 >
 > - `CLAUDE.md` - Your full candidate profile
-> - `.dsh/skills/job-application-assistant/01-candidate-profile.md` - Structured profile
-> - `.dsh/skills/job-application-assistant/02-behavioral-profile.md` - Behavioral assessment
-> - `.dsh/skills/job-application-assistant/04-job-evaluation.md` - Personalized evaluation framework
-> - `.dsh/skills/job-application-assistant/05-cv-templates.md` - CV templates with your profile statements and contact block
-> - `.dsh/skills/job-application-assistant/06-cover-letter-templates.md` - Cover letter templates with your contact line and signature
-> - `.dsh/skills/job-application-assistant/07-interview-prep.md` - STAR examples from your experience
+> - `.claude/skills/job-application-assistant/01-candidate-profile.md` - Structured profile
+> - `.claude/skills/job-application-assistant/02-behavioral-profile.md` - Behavioral assessment
+> - `.claude/skills/job-application-assistant/04-job-evaluation.md` - Personalized evaluation framework
+> - `.claude/skills/job-application-assistant/05-cv-templates.md` - CV templates with your profile statements and contact block
+> - `.claude/skills/job-application-assistant/06-cover-letter-templates.md` - Cover letter templates with your contact line and signature
+> - `.claude/skills/job-application-assistant/07-interview-prep.md` - STAR examples from your experience
 > - `cv/main_example.tex` - Your LaTeX CV template
-> - `.dsh/skills/job-scraper/search-queries.md` - Job search queries for `/scrape`
+> - `.claude/skills/job-scraper/search-queries.md` - Job search queries for `/scrape`
 >
 > **Privacy note:** the files above now contain your personal data and are *tracked by git*.
 > A GitHub fork of the template is always public (forks of public repos cannot be made
