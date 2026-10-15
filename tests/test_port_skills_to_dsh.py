@@ -53,7 +53,7 @@ def expected_outputs() -> dict[str, str]:
     for src in sorted(SRC.rglob("SKILL.md")):
         rel = src.relative_to(SRC).as_posix()
         text, counts = _converter.convert(src.read_text(encoding="utf-8"), rel)
-        out[rel] = _converter.apply_overrides(text, rel, counts)
+        out[_converter.output_rel(rel)] = _converter.apply_overrides(text, rel, counts)
     for src in sorted(CMDS.glob("*.md")):
         name = src.stem
         text, counts = _converter.convert_command(src.read_text(encoding="utf-8"), name)
@@ -149,7 +149,13 @@ class PortedLayerIsReproducible(unittest.TestCase):
 
     def test_ported_skills_stay_model_invocable(self):
         for name in sorted(MODEL_INVOCABLE):
-            fm = frontmatter((DST / name / "SKILL.md").read_text(encoding="utf-8"))
+            # Resolved through the converter, not as a bare directory name: one of these
+            # sources is ported under a different directory (see SKILL_DIR_RENAMES), and a
+            # rename must not be able to make this test pass by finding nothing.
+            rel = _converter.output_rel(f"{name}/SKILL.md")
+            path = DST / rel
+            self.assertTrue(path.is_file(), f"{rel} is missing from the generated layer")
+            fm = frontmatter(path.read_text(encoding="utf-8"))
             self.assertNotIn(
                 "disable-model-invocation: true",
                 fm,
@@ -195,6 +201,22 @@ class LayerBoundaryTests(unittest.TestCase):
             "the setup flow must not read or write inside the generated layer",
         )
         self.assertIn("search-queries.md", setup)
+
+    def test_directory_name_matches_the_skill_name(self):
+        """dsh derives a skill's identity from its directory; Claude Code takes it from the
+        frontmatter. Where they disagree - upstream's `job-scraper` announces itself as
+        `scrape` - the name a user types may not resolve, so SKILL_DIR_RENAMES makes them
+        agree and this test keeps them agreeing across the next upstream rename."""
+        for path in sorted(DST.rglob("SKILL.md")):
+            match = re.search(r"^name:\s*(.+)$", frontmatter(path.read_text("utf-8")), re.M)
+            if match is None:
+                self.fail(f"{path.relative_to(REPO)} has no name in frontmatter")
+            self.assertEqual(
+                path.parent.name,
+                match.group(1).strip(),
+                f"{path.relative_to(REPO)}: directory and skill name disagree, so the "
+                f"copied skill may not resolve under the name users invoke",
+            )
 
     def test_command_references_still_resolve_after_the_un_remap(self):
         """Paths that point at command dispatchers get remapped; paths that point at
