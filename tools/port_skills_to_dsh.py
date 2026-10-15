@@ -80,6 +80,22 @@ RENAMES = [
     (r"\bWebFetch\b", "web_fetch"),
 ]
 
+# dsh resolves a skill's identity from its directory name (it discovers `<name>/SKILL.md`
+# and validates the directory against ^[a-z0-9]+(?:-[a-z0-9]+)*$), while Claude Code takes
+# the name from the frontmatter. Upstream relies on the frontmatter: the directory is
+# `job-scraper` but the skill announces itself as `scrape`, which is what every doc and
+# every other prompt calls it. Left alone, the two readings disagree and `/scrape` - a core
+# step - may not resolve for a user. Naming the directory after the name makes both
+# readings agree, so the entry point works whichever one the harness prefers.
+SKILL_DIR_RENAMES = {"job-scraper": "scrape"}
+
+
+def output_rel(rel: str) -> str:
+    """Map a source-relative path to its path in the generated layer."""
+    head, _, tail = rel.partition("/")
+    return f"{SKILL_DIR_RENAMES.get(head, head)}/{tail}" if tail else head
+
+
 PATH_MAPS = [
     # Only command references move: a command becomes a dispatcher in the ported layer.
     # Skill-resource paths (`.claude/skills/<skill>/0X-*.md`) are deliberately left alone -
@@ -293,7 +309,7 @@ def main() -> int:
     print("skills:")
     for src in sorted(SRC.rglob("SKILL.md")):
         rel = src.relative_to(SRC).as_posix()
-        out = DST / src.relative_to(SRC)
+        out = DST / output_rel(src.relative_to(SRC).as_posix())
         out.parent.mkdir(parents=True, exist_ok=True)
         text, counts = convert(src.read_text(encoding="utf-8"), rel)
         text = apply_overrides(text, rel, counts)
@@ -324,6 +340,10 @@ def main() -> int:
             if stale not in expected:
                 stale.unlink()
                 print(f"  removed stale {stale.relative_to(REPO)}")
+        for d in sorted(DST.glob("*"), reverse=True):
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+                print(f"  removed empty dir {d.relative_to(REPO)}")
 
     print(f"\nfiles written: {written}")
     if not totals:
