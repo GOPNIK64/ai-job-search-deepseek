@@ -183,6 +183,59 @@ OVERRIDES: dict[str, list[tuple[str, str]]] = {
             "`.agents/skills/` are shared by every runtime.",
         )
     ],
+    # The escalation rule's premise is a claim about the fetch tool, so renaming the tool
+    # is not enough: dsh's web_fetch presents its own product agent AND never reads
+    # robots.txt, which changes who enforces the opt-out. Source of the agent string and
+    # the "never a browser disguise" wording: the web-fetch-http package in the dsh
+    # bundle (DEFAULT_USER_AGENT).
+    "job-application-assistant/09-web-research.md": [
+        (
+            "`web_fetch` identifies itself as `Claude-User` and honors `robots.txt`. That is "
+            "the formal opt-out a site owner is told they can rely on, so a 403 has two very "
+            "different causes and they must not be treated the same:",
+            "`web_fetch` presents an explicit product agent — "
+            "`deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)`, which dsh's own "
+            'source describes as "an explicit product agent, never a browser disguise". '
+            "Unlike Claude Code's `WebFetch`, **dsh's `web_fetch` never reads `robots.txt`**: "
+            "nothing in its fetch path consults the policy. That removes the enforcement, not "
+            "the obligation. `robots.txt` remains the formal opt-out a site owner is told they "
+            "can rely on, and the check below is now the only place this workflow honors it "
+            "before escalating. A 403 still has two very different causes, and they must not "
+            "be treated the same:",
+        ),
+        (
+            "If `robots.txt` disallows the path for `*` or for `Claude-User`, retrying with "
+            "browser headers circumvents the exact mechanism the site was told to use.",
+            "If `robots.txt` disallows the path for `*` or for our own agent token "
+            "(`deepseek-harness`), retrying with browser headers circumvents the exact "
+            "mechanism the site was told to use.",
+        ),
+        (
+            "and a disallow for **either** `*` or `Claude-User` blocks the retry.",
+            "and a disallow for **either** `*` or our own agent token blocks the retry.",
+        ),
+        (
+            "- **The WAF usually blocks `robots.txt` too.** On `privatebank.barclays.com` the "
+            "policy file itself returns 403 to `Claude-User` and 200 to a browser. The checker "
+            "therefore reads the policy as a browser if the honest request is refused, then "
+            "obeys it strictly. A policy you are prevented from reading cannot be honored, and "
+            "`robots.txt` is not the protected resource.",
+            "- **The WAF sometimes blocks `robots.txt` too.** The checker therefore reads the "
+            "policy as a browser if the honest request is refused, then obeys it strictly: a "
+            "policy you are prevented from reading cannot be honored, and `robots.txt` is not "
+            "the protected resource. Upstream's evidence for this was "
+            "`privatebank.barclays.com` returning 403 to its agent; measured again from this "
+            "runtime on 2026-10-15, that host's policy file answered **200 to both** the dsh "
+            "agent and a browser UA. The mechanism is kept because the asymmetry is real in "
+            "principle, but treat that host as unconfirmed rather than as proof.",
+        ),
+        (
+            "If `robots.txt` disallows the path for `*` or `Claude-User`, **skip this step "
+            "entirely** and go to step 3.",
+            "If `robots.txt` disallows the path for `*` or our own agent token, **skip this "
+            "step entirely** and go to step 3.",
+        ),
+    ],
 }
 
 

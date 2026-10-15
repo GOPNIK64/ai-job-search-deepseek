@@ -17,7 +17,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from robots_check import allowed, is_robots_body  # noqa: E402
+from robots_check import FETCH_AGENT, FETCH_UA, allowed, is_robots_body  # noqa: E402
 
 
 # Real body served by privatebank.barclays.com: blank lines sit between the
@@ -80,21 +80,29 @@ class TestPathRules(unittest.TestCase):
 
 
 class TestAgentSelection(unittest.TestCase):
-    def test_named_claude_user_opt_out_is_honored(self):
-        body = "User-agent: Claude-User\nDisallow: /\n\nUser-agent: *\nAllow: /\n"
-        self.assertFalse(allowed(body, "Claude-User", "/a"))
+    """The agent a policy names is the one this runtime's fetch presents.
+
+    Upstream named `Claude-User` in these cases; this fork's fetch presents
+    `deepseek-harness`, so a policy that declines *that* agent has to be honored.
+    `FETCH_AGENT` is the single source of truth for the name, and the gate tests in
+    this file pin it end to end rather than only through `allowed()`.
+    """
+
+    def test_named_agent_opt_out_is_honored(self):
+        body = f"User-agent: {FETCH_AGENT}\nDisallow: /\n\nUser-agent: *\nAllow: /\n"
+        self.assertFalse(allowed(body, FETCH_AGENT, "/a"))
         self.assertTrue(allowed(body, "*", "/a"))
 
     def test_agent_match_is_case_insensitive(self):
-        body = "User-agent: CLAUDE-USER\nDisallow: /x\n"
-        self.assertFalse(allowed(body, "claude-user", "/x"))
+        body = f"User-agent: {FETCH_AGENT.upper()}\nDisallow: /x\n"
+        self.assertFalse(allowed(body, FETCH_AGENT.lower(), "/x"))
 
     def test_falls_back_to_star_when_agent_absent(self):
-        self.assertFalse(allowed(JOBUP, "Claude-User", "/api/v1"))
+        self.assertFalse(allowed(JOBUP, FETCH_AGENT, "/api/v1"))
 
     def test_multiple_agents_share_one_ruleset(self):
-        body = "User-agent: A\nUser-agent: Claude-User\nDisallow: /z\n"
-        self.assertFalse(allowed(body, "Claude-User", "/z"))
+        body = f"User-agent: A\nUser-agent: {FETCH_AGENT}\nDisallow: /z\n"
+        self.assertFalse(allowed(body, FETCH_AGENT, "/z"))
         self.assertFalse(allowed(body, "A", "/z"))
 
 
@@ -137,12 +145,77 @@ class TestSoftTwoHundred(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("not a robots.txt", msg)
 
+    def test_gate_presents_our_agent_before_any_browser_fallback(self):
+        """The honest agent goes first. Falling back to a browser UA is the recovery
+        path, never the opening move — if it were, this tool would be the circumvention
+        it exists to prevent."""
+        import robots_check
+
+        seen = []
+        original = robots_check._fetch
+
+        def spy(url, ua):
+            seen.append(ua)
+            return ("User-agent: *\nAllow: /\n", 200)
+
+        robots_check._fetch = spy
+        try:
+            robots_check.gate("https://x.example/jobs")
+        finally:
+            robots_check._fetch = original
+        self.assertEqual(seen[0], FETCH_UA, "the first request must present our own agent")
+        self.assertEqual(len(seen), 1, "a readable policy needs no browser fallback")
+
+    def test_gate_honors_an_opt_out_named_for_our_own_agent(self):
+        """FAIL-OPEN REGRESSION: a policy that declines *this* agent while allowing `*`.
+
+        This is the case the upstream agent identity missed. Checking only the wildcard
+        read such a policy as permission, and the browser-header retry would then
+        override a site that named us specifically — the one direction this gate must
+        not fail in.
+        """
+        import robots_check
+
+        body = f"User-agent: {FETCH_AGENT}\nDisallow: /jobs\n\nUser-agent: *\nAllow: /\n"
+        original = robots_check._fetch
+        robots_check._fetch = lambda url, ua: (body, 200)
+        try:
+            rc, msg = robots_check.gate("https://x.example/jobs")
+        finally:
+            robots_check._fetch = original
+        self.assertEqual(rc, 1)
+        self.assertIn("DISALLOWED", msg)
+
+    def test_gate_does_not_blame_our_agent_for_a_wildcard_rule(self):
+        """The report must name the group that actually blocked the path.
+
+        A wildcard decline is not the site declining *this* runtime. Saying otherwise
+        would misreport a third party's published policy, which is the one thing this
+        tool must not do.
+        """
+        import robots_check
+
+        original = robots_check._fetch
+        robots_check._fetch = lambda url, ua: ("User-agent: *\nDisallow: /jobs\n", 200)
+        try:
+            rc, msg = robots_check.gate("https://x.example/jobs")
+        finally:
+            robots_check._fetch = original
+        self.assertEqual(rc, 1)
+        self.assertIn('wildcard "*"', msg)
+        self.assertNotIn(FETCH_AGENT, msg)
+
     def test_gate_reads_policy_as_browser_when_honest_request_is_refused(self):
-        """09-web-research.md's Barclays-class recovery: the policy file itself
-        returns 403 to Claude-User and 200 to a browser, and the checker must
-        then read it as a browser and obey it strictly. This is gate()'s UA
-        fallback loop, previously untested despite the doc's coverage claim
-        (review finding F30, 2026-08-19)."""
+        """09-web-research.md's WAF-class recovery: the policy file itself returns 403
+        to an honest non-browser agent and 200 to a browser, and the checker must then
+        read it as a browser and obey it strictly. This is gate()'s UA fallback loop,
+        previously untested despite the doc's coverage claim (review finding F30,
+        2026-08-19).
+
+        Upstream cited `privatebank.barclays.com` as the real instance of this; measured
+        again on 2026-10-15 from this runtime, that host's policy file answered 200 to
+        both user agents, so the case is kept as a simulated guard rather than as
+        evidence about that host."""
         import robots_check
 
         original = robots_check._fetch

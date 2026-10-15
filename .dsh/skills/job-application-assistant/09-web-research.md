@@ -29,10 +29,10 @@ Do **not** respond to a 403 by softening the cover letter to vague generalities,
 
 **The rule: the retry exists to get past bot-filtering firewalls on sites whose `robots.txt` permits access. It is never used to override a site that has said no.**
 
-`web_fetch` identifies itself as `Claude-User` and honors `robots.txt`. That is the formal opt-out a site owner is told they can rely on, so a 403 has two very different causes and they must not be treated the same:
+`web_fetch` presents an explicit product agent — `deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)`, which dsh's own source describes as "an explicit product agent, never a browser disguise". Unlike Claude Code's `WebFetch`, **dsh's `web_fetch` never reads `robots.txt`**: nothing in its fetch path consults the policy. That removes the enforcement, not the obligation. `robots.txt` remains the formal opt-out a site owner is told they can rely on, and the check below is now the only place this workflow honors it before escalating. A 403 still has two very different causes, and they must not be treated the same:
 
 - **A WAF default on a site whose published policy allows access.** Many bank and corporate domains serve `User-agent: *` / `Allow: /` while their firewall filters any client that does not look like a browser. Retrying there overrides a firewall default, not an expressed preference. Proceed.
-- **A site that has actually declined.** If `robots.txt` disallows the path for `*` or for `Claude-User`, retrying with browser headers circumvents the exact mechanism the site was told to use. **Do not retry.** Skip to escalation step 3 and find the employer's own posting instead.
+- **A site that has actually declined.** If `robots.txt` disallows the path for `*` or for our own agent token (`deepseek-harness`), retrying with browser headers circumvents the exact mechanism the site was told to use. **Do not retry.** Skip to escalation step 3 and find the employer's own posting instead.
 
 Check it first. It is one cheap fetch, and the repo ships the check:
 
@@ -40,11 +40,11 @@ Check it first. It is one cheap fetch, and the repo ships the check:
 python3 tools/robots_check.py '<URL>'
 ```
 
-Exit status `0` means the retry may proceed; `1` means it must not, so go to escalation step 3. The rules it applies are deliberately on the cautious side: longest-match wins, a tie between `Allow` and `Disallow` goes to `Disallow`, and a disallow for **either** `*` or `Claude-User` blocks the retry. A `404` means the site publishes no policy, which is permission; **any other failure to read `robots.txt` leaves permission unconfirmed and the retry does not happen.**
+Exit status `0` means the retry may proceed; `1` means it must not, so go to escalation step 3. The rules it applies are deliberately on the cautious side: longest-match wins, a tie between `Allow` and `Disallow` goes to `Disallow`, and a disallow for **either** `*` or our own agent token blocks the retry. A `404` means the site publishes no policy, which is permission; **any other failure to read `robots.txt` leaves permission unconfirmed and the retry does not happen.**
 
 Two details worth knowing, both covered by `tests/test_robots_check.py`:
 
-- **The WAF usually blocks `robots.txt` too.** On `privatebank.barclays.com` the policy file itself returns 403 to `Claude-User` and 200 to a browser. The checker therefore reads the policy as a browser if the honest request is refused, then obeys it strictly. A policy you are prevented from reading cannot be honored, and `robots.txt` is not the protected resource.
+- **The WAF sometimes blocks `robots.txt` too.** The checker therefore reads the policy as a browser if the honest request is refused, then obeys it strictly: a policy you are prevented from reading cannot be honored, and `robots.txt` is not the protected resource. Upstream's evidence for this was `privatebank.barclays.com` returning 403 to its agent; measured again from this runtime on 2026-10-15, that host's policy file answered **200 to both** the dsh agent and a browser UA. The mechanism is kept because the asymmetry is real in principle, but treat that host as unconfirmed rather than as proof.
 - **Do not substitute `urllib.robotparser`.** It ends a record at a blank line and matches rules in file order, so a real-world file like Barclays' (blank lines between `User-agent: *` and its rules, `Allow: /` listed before `Disallow: /cs/`) reads as "everything allowed". That fails open, in the one direction that matters.
 
 ### The retry: curl with browser headers
@@ -84,7 +84,7 @@ Modern sites embed real copy inside JSON blobs in the markup, so useful text oft
 Try these in order and stop at the first that yields real content:
 
 1. **`web_fetch`** on the target URL. Cheapest, returns clean markdown.
-2. **Check `robots.txt`, then `curl` with browser headers** (above), then strip tags. Fixes the 403 class of failure. If `robots.txt` disallows the path for `*` or `Claude-User`, **skip this step entirely** and go to step 3.
+2. **Check `robots.txt`, then `curl` with browser headers** (above), then strip tags. Fixes the 403 class of failure. If `robots.txt` disallows the path for `*` or our own agent token, **skip this step entirely** and go to step 3.
 3. **`web_search`** for the company or role by name, to find an alternative canonical URL: the employer's own careers portal is almost always richer than the aggregator that surfaced the posting, and it carries the reference ID and grade that aggregators drop.
 4. **Declare it genuinely unavailable** only after 1 to 3 have failed. In `/rank` that means marking the entry `expired`; in `/apply` it means telling the user the posting could not be retrieved and stopping rather than drafting from the title.
 

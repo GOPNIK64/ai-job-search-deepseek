@@ -82,18 +82,26 @@ class PortedLayerIsReproducible(unittest.TestCase):
             )
 
     def test_no_claude_tool_vocabulary_survives(self):
+        """No Claude Code tool vocabulary, except where a line is *about* upstream.
+
+        A line that names the upstream runtime is contrasting with it — the ported
+        escalation rule does exactly that when it explains that dsh's fetch never reads
+        robots.txt. That is documentation, not a tool call under the wrong name, so the
+        exemption is gated on the contrast marker rather than on a path allowlist.
+        """
         for path in sorted(DST.rglob("*.md")):
             text = path.read_text(encoding="utf-8")
-            # ported_from deliberately names the Claude path; the vocabulary does not.
-            body = "\n".join(
-                line for line in text.splitlines() if not line.startswith("ported_from:")
-            )
-            hit = CLAUDE_ONLY.search(body)
-            if hit:
-                self.fail(
-                    f"{path.relative_to(REPO)} still carries Claude Code vocabulary: "
-                    f"{hit.group(0)!r}"
-                )
+            for n, line in enumerate(text.splitlines(), 1):
+                if line.startswith("ported_from:"):
+                    continue  # provenance deliberately names the Claude path
+                if "Claude Code" in line:
+                    continue  # a contrastive mention, not a tool call
+                hit = CLAUDE_ONLY.search(line)
+                if hit:
+                    self.fail(
+                        f"{path.relative_to(REPO)}:{n} still carries Claude Code "
+                        f"vocabulary: {hit.group(0)!r}"
+                    )
 
     def test_frontmatter_carries_provenance(self):
         for path in sorted(DST.rglob("SKILL.md")):
