@@ -19,9 +19,20 @@ To prevent duplication and configuration drift across different AI agent framewo
 > `.agents/skills/` are shared by both runtimes and are byte-identical in each.
 >
 > The ported layer is generated, never hand-edited: `python3 tools/port_skills_to_dsh.py`
-> rebuilds `.dsh/skills/` from `.claude/skills/**` and `.claude/commands/**`, and
-> `tests/test_port_skills_to_dsh.py` fails on any file the converter would not produce.
-> Judgement edits belong in that tool's `OVERRIDES` table.
+> rewrites `.dsh/skills/*/SKILL.md` from `.claude/skills/*/SKILL.md` and
+> `.claude/commands/*.md`, and `tests/test_port_skills_to_dsh.py` fails on any file the
+> converter would not produce. Judgement edits belong in that tool's `OVERRIDES` table.
+>
+> Layer boundary — dispatchers are generated, content is not. `.dsh/skills/` holds only
+> the entry points dsh discovers; everything they read stays in `.claude/` and is
+> referenced there. That is what keeps `/setup` alive: it writes the candidate profile
+> into `.claude/skills/job-application-assistant/01-`, `02-` and `04-` through `07-`, and
+> command bodies write newly confirmed facts back to `01-` as they run. Content in the
+> generated layer would be deleted by the next converter run, with no copy anywhere.
+>
+> Mirror files this fork has edited directly (upstream merges to these will conflict, by
+> design): `.claude/skills/job-application-assistant/09-web-research.md`, whose web-research
+> escalation rule names this runtime's fetch tool and its robots.txt behaviour.
 >
 > Optional Python dependencies (PyYAML for `tools/lint_skills.py`, pypdf for
 > `tools/verify_pdf.py`, openpyxl for `tools/convert_salary_excel.py`) live in the

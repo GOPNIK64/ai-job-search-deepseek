@@ -46,13 +46,13 @@ Before doing anything, show the user precisely what will be wiped.
 
 Read the current state of these files and report whether each has content or is already empty:
 
-- `.dsh/skills/job-application-assistant/01-candidate-profile.md`
-- `.dsh/skills/job-application-assistant/02-behavioral-profile.md`
-- `.dsh/skills/job-application-assistant/04-job-evaluation.md` *(personalized match areas, career goals, and life-situation constraints only — the scoring framework is preserved)*
-- `.dsh/skills/job-application-assistant/05-cv-templates.md` *(profile statements section and the contact block inside the LaTeX template only — framework structure is preserved)*
-- `.dsh/skills/job-application-assistant/06-cover-letter-templates.md` *(contact line and signature inside the LaTeX template only — framework structure is preserved)*
-- `.dsh/skills/job-application-assistant/07-interview-prep.md` *(STAR examples and STAR candidates sections only — framework structure is preserved)*
-- `.dsh/skills/job-scraper/search-queries.md` *(role titles, domain keywords, and location terms only — query structure is preserved)*
+- `.claude/skills/job-application-assistant/01-candidate-profile.md`
+- `.claude/skills/job-application-assistant/02-behavioral-profile.md`
+- `.claude/skills/job-application-assistant/04-job-evaluation.md` *(personalized match areas, career goals, and life-situation constraints only — the scoring framework is preserved)*
+- `.claude/skills/job-application-assistant/05-cv-templates.md` *(profile statements section and the contact block inside the LaTeX template only — framework structure is preserved)*
+- `.claude/skills/job-application-assistant/06-cover-letter-templates.md` *(contact line and signature inside the LaTeX template only — framework structure is preserved)*
+- `.claude/skills/job-application-assistant/07-interview-prep.md` *(STAR examples and STAR candidates sections only — framework structure is preserved)*
+- `.claude/skills/job-scraper/search-queries.md` *(role titles, domain keywords, and location terms only — query structure is preserved)*
 
 This list must stay in step with what `/setup` Step 3 populates: every skill file it writes candidate data into is cleared here.
 
@@ -239,7 +239,7 @@ Replace with:
 
 Leave all other content in `07-interview-prep.md` intact (STAR format explanation, tough questions, questions to ask interviewers, phone/video tips, follow-up etiquette, roleplay guidelines).
 
-**For `.dsh/skills/job-scraper/search-queries.md`**, restore the values `/setup` Step 3.9 personalized back to their placeholder tokens:
+**For `.claude/skills/job-scraper/search-queries.md`**, restore the values `/setup` Step 3.9 personalized back to their placeholder tokens:
 
 - **Search Sites**: the board names back to `[YOUR_JOB_BOARD]`, `[YOUR_INDUSTRY_JOB_BOARD]`, `[YOUR_ADDITIONAL_JOB_BOARD]`, and the LinkedIn filter back to `[YOUR_COUNTRY]` / `[YOUR_CITY]`.
 - **Query Categories**: the four priority headings back to `[YOUR_PRIMARY_ROLE_TYPE]`, `[YOUR_DOMAIN_EXPERTISE]`, `[YOUR_ADJACENT_ROLE_TYPE]`, and `Broader Technical / Consulting`; inside the query blocks, the titles, skills, and domain terms back to `[YOUR_PRIMARY_JOB_TITLE_1]`, `[YOUR_PRIMARY_JOB_TITLE_2]`, `[YOUR_ADJACENT_TITLE_1]`, `[YOUR_ADJACENT_TITLE_2]`, `[YOUR_KEY_SKILL]`, `[YOUR_DOMAIN_KEYWORD_1]`, `[YOUR_DOMAIN_KEYWORD_2]`, `[YOUR_DOMAIN]`, and the location terms back to `[YOUR_CITY]`, `[YOUR_COUNTRY]`, `[YOUR_REGION]`.

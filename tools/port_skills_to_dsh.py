@@ -7,8 +7,22 @@ divergence stays mechanical instead of hand-maintained — when upstream moves, 
 
     python3 tools/port_skills_to_dsh.py
 
-    .claude/skills/**            ->  .dsh/skills/**               (model-invocable skills)
-    .claude/commands/<name>.md   ->  .dsh/skills/<name>/SKILL.md  (user-invocable commands)
+    .claude/skills/<skill>/SKILL.md   ->  .dsh/skills/<skill>/SKILL.md
+    .claude/commands/<name>.md        ->  .dsh/skills/<name>/SKILL.md
+
+Layer boundary: dispatchers are generated, content is not.
+
+Only those entry points are generated, because they are the only files dsh has to
+*discover*. Everything they read — the methodology under
+`.claude/skills/job-application-assistant/`, `job-scraper/search-queries.md` — stays where
+upstream put it and is referenced there unchanged.
+
+That asymmetry is not cosmetic. `/setup` WRITES the candidate profile into
+`01-candidate-profile.md`, `02-behavioral-profile.md` and `04-` through `07-`, and
+command bodies write new facts back to `01-` on every run. If those files lived in the
+generated layer, the next converter run would silently delete the profile — the one
+artifact this whole workflow exists to produce. The generated layer is output; anything
+the workflow writes is input, and inputs never live in the output.
 
 What it rewrites, and why each mapping is what it is:
 
@@ -67,7 +81,9 @@ RENAMES = [
 ]
 
 PATH_MAPS = [
-    (r"\.claude/skills/", ".dsh/skills/"),
+    # Only command references move: a command becomes a dispatcher in the ported layer.
+    # Skill-resource paths (`.claude/skills/<skill>/0X-*.md`) are deliberately left alone -
+    # they are the content the dispatchers read, and only dispatchers get copied.
     (r"\.claude/commands/([a-z-]+)\.md", r".dsh/skills/\1/SKILL.md"),
 ]
 
@@ -146,6 +162,14 @@ def convert_command(text: str, name: str) -> tuple[str, dict[str, int]]:
 # .dsh/skills/. They live here rather than as hand edits to .dsh/ so the layer stays
 # reproducible — tests/test_port_skills_to_dsh.py fails on anything the converter would
 # not produce, and a hand edit would be silently reverted by the next run.
+#
+# Note on 09-web-research.md: the escalation rule's premise is a claim about the fetch
+# tool, so renaming the tool was never going to be enough — dsh's web_fetch presents its
+# own product agent AND never reads robots.txt, which changes who enforces a site's
+# opt-out. That correction was made in
+# `.claude/skills/job-application-assistant/09-web-research.md` directly, because content
+# lives there and the generated layer no longer holds content files. See AGENTS.md's
+# "mirror files this fork has edited" note.
 OVERRIDES: dict[str, list[tuple[str, str]]] = {
     # Upstream's rule names its own runtime, which is a preference rather than a
     # methodology. The fork keeps the rule's substance (be specific, never claim a tool
@@ -183,59 +207,6 @@ OVERRIDES: dict[str, list[tuple[str, str]]] = {
             "`.agents/skills/` are shared by every runtime.",
         )
     ],
-    # The escalation rule's premise is a claim about the fetch tool, so renaming the tool
-    # is not enough: dsh's web_fetch presents its own product agent AND never reads
-    # robots.txt, which changes who enforces the opt-out. Source of the agent string and
-    # the "never a browser disguise" wording: the web-fetch-http package in the dsh
-    # bundle (DEFAULT_USER_AGENT).
-    "job-application-assistant/09-web-research.md": [
-        (
-            "`web_fetch` identifies itself as `Claude-User` and honors `robots.txt`. That is "
-            "the formal opt-out a site owner is told they can rely on, so a 403 has two very "
-            "different causes and they must not be treated the same:",
-            "`web_fetch` presents an explicit product agent — "
-            "`deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)`, which dsh's own "
-            'source describes as "an explicit product agent, never a browser disguise". '
-            "Unlike Claude Code's `WebFetch`, **dsh's `web_fetch` never reads `robots.txt`**: "
-            "nothing in its fetch path consults the policy. That removes the enforcement, not "
-            "the obligation. `robots.txt` remains the formal opt-out a site owner is told they "
-            "can rely on, and the check below is now the only place this workflow honors it "
-            "before escalating. A 403 still has two very different causes, and they must not "
-            "be treated the same:",
-        ),
-        (
-            "If `robots.txt` disallows the path for `*` or for `Claude-User`, retrying with "
-            "browser headers circumvents the exact mechanism the site was told to use.",
-            "If `robots.txt` disallows the path for `*` or for our own agent token "
-            "(`deepseek-harness`), retrying with browser headers circumvents the exact "
-            "mechanism the site was told to use.",
-        ),
-        (
-            "and a disallow for **either** `*` or `Claude-User` blocks the retry.",
-            "and a disallow for **either** `*` or our own agent token blocks the retry.",
-        ),
-        (
-            "- **The WAF usually blocks `robots.txt` too.** On `privatebank.barclays.com` the "
-            "policy file itself returns 403 to `Claude-User` and 200 to a browser. The checker "
-            "therefore reads the policy as a browser if the honest request is refused, then "
-            "obeys it strictly. A policy you are prevented from reading cannot be honored, and "
-            "`robots.txt` is not the protected resource.",
-            "- **The WAF sometimes blocks `robots.txt` too.** The checker therefore reads the "
-            "policy as a browser if the honest request is refused, then obeys it strictly: a "
-            "policy you are prevented from reading cannot be honored, and `robots.txt` is not "
-            "the protected resource. Upstream's evidence for this was "
-            "`privatebank.barclays.com` returning 403 to its agent; measured again from this "
-            "runtime on 2026-10-15, that host's policy file answered **200 to both** the dsh "
-            "agent and a browser UA. The mechanism is kept because the asymmetry is real in "
-            "principle, but treat that host as unconfirmed rather than as proof.",
-        ),
-        (
-            "If `robots.txt` disallows the path for `*` or `Claude-User`, **skip this step "
-            "entirely** and go to step 3.",
-            "If `robots.txt` disallows the path for `*` or our own agent token, **skip this "
-            "step entirely** and go to step 3.",
-        ),
-    ],
 }
 
 
@@ -262,15 +233,17 @@ def main() -> int:
         return 1
     totals: dict[str, int] = {}
     written = 0
+    expected: set[pathlib.Path] = set()
 
     print("skills:")
-    for src in sorted(SRC.rglob("*.md")):
+    for src in sorted(SRC.rglob("SKILL.md")):
         rel = src.relative_to(SRC).as_posix()
         out = DST / src.relative_to(SRC)
         out.parent.mkdir(parents=True, exist_ok=True)
         text, counts = convert(src.read_text(encoding="utf-8"), rel)
         text = apply_overrides(text, rel, counts)
         out.write_text(text, encoding="utf-8")
+        expected.add(out)
         _report(rel, counts, totals)
         written += 1
 
@@ -283,10 +256,19 @@ def main() -> int:
             text, counts = convert_command(src.read_text(encoding="utf-8"), name)
             text = apply_overrides(text, f"{name}/SKILL.md", counts)
             out.write_text(text, encoding="utf-8")
+            expected.add(out)
             _report(f"{name}", counts, totals)
             written += 1
     else:
         print(f"  no commands directory at {CMDS}")
+
+    # Self-cleaning: anything no longer generated is removed, so dropping a source file
+    # cannot leave a stale skill behind for dsh to keep discovering.
+    if DST.is_dir():
+        for stale in sorted(DST.rglob("*.md")):
+            if stale not in expected:
+                stale.unlink()
+                print(f"  removed stale {stale.relative_to(REPO)}")
 
     print(f"\nfiles written: {written}")
     if not totals:
