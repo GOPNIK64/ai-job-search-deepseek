@@ -163,6 +163,124 @@ class TestResetCoversEveryPersonalizedSkillFile(unittest.TestCase):
             f"{mislabeled}",
         )
 
+SKILL_DIR = REPO / ".claude" / "skills" / "job-application-assistant"
+
+
+def skeleton_step(reset_text, filename):
+    """(instruction sentence, fenced markdown) /reset uses to rewrite `filename` in Step 3."""
+    marker = f"**For `{filename}`**"
+    start = reset_text.index(marker)
+    fence_open = reset_text.index("```markdown", start)
+    fence_close = reset_text.index("```", fence_open + len("```markdown"))
+    return reset_text[start:fence_open], reset_text[fence_open + len("```markdown"):fence_close]
+
+
+def skeleton_block(reset_text, filename):
+    """The fenced markdown /reset writes over `filename` in Step 3."""
+    return skeleton_step(reset_text, filename)[1]
+
+
+def frontmatter(text):
+    """The leading `---` block of a skill file, or '' when it has none."""
+    if not text.startswith("---\n"):
+        return ""
+    end = text.index("\n---", 4)
+    return text[: end + len("\n---") + 1]
+
+
+def h2_headings(text):
+    return [line.strip() for line in text.splitlines() if line.startswith("## ")]
+
+
+class TestResetTargetsTheHeadingsTheShippedFilesHave(unittest.TestCase):
+    """Step 3's skeletons and anchors must name sections that exist.
+
+    Two of them drifted from the files they rewrite. The behavioral-profile
+    skeleton used "Strongest Behavioral Traits" / "How I Work Best" / "Growth
+    Areas" where the shipped file has "Strongest Behaviors" / "How You Work
+    Best" / "Growth Areas (frame positively in applications)", and dropped
+    "Core Behavioral Drives" - the structured assessment table /setup collects
+    and /interview reads - so one reset left the file's headings permanently
+    different from every other fork's. The CV-guide step anchored on a line
+    beginning "**Profile statement templates", which the guide has never
+    contained (its heading is "**Create 2-3 profile statement templates for
+    your main role types:**"), so the wipe found nothing and the user's
+    role-tailored statements survived a reset that reported success. Both are
+    derived here from the shipped files, so a renamed heading fails this test
+    until /reset follows it.
+    """
+
+    def setUp(self):
+        self.reset = RESET.read_text(encoding="utf-8")
+
+    def test_full_file_skeletons_keep_the_shipped_headings(self):
+        for filename in ("01-candidate-profile.md", "02-behavioral-profile.md"):
+            with self.subTest(file=filename):
+                shipped = (SKILL_DIR / filename).read_text(encoding="utf-8")
+                self.assertEqual(
+                    h2_headings(skeleton_block(self.reset, filename)),
+                    h2_headings(shipped),
+                    f"/reset's skeleton for {filename} must carry exactly the shipped "
+                    "## headings, in order - a reset must not rename or drop sections",
+                )
+
+    def test_full_file_skeletons_keep_the_framework_version_frontmatter(self):
+        # The shipped files open with a `framework_version` marker that
+        # check_framework_version.py requires and check_upstream_updates.py
+        # reads. The skeletons started at the `#` title, so one /reset profile
+        # left both files failing the version gate ("missing 'framework_version'
+        # in frontmatter") and invisible to the fork update checker. The
+        # instruction must say to keep the block, and the block must not be
+        # hardcoded into the skeleton, where it would go stale on the next bump.
+        import sys
+        sys.path.insert(0, str(REPO / "tools"))
+        from check_upstream_updates import get_framework_version_from_text
+
+        for filename in ("01-candidate-profile.md", "02-behavioral-profile.md"):
+            with self.subTest(file=filename):
+                shipped = (SKILL_DIR / filename).read_text(encoding="utf-8")
+                head = frontmatter(shipped)
+                self.assertTrue(head, f"{filename} must ship with a frontmatter block")
+                instruction, block = skeleton_step(self.reset, filename)
+                self.assertIn("frontmatter", instruction, f"the {filename} step must say to keep the frontmatter")
+                self.assertNotIn("framework_version", block, "the skeleton must not hardcode a version")
+                # What the file looks like after the reset, applied as written.
+                after = head + block.lstrip("\n")
+                self.assertEqual(
+                    get_framework_version_from_text(after),
+                    get_framework_version_from_text(shipped),
+                    f"a reset must leave {filename}'s framework_version readable and unchanged",
+                )
+
+    def test_partial_anchors_exist_in_the_files_they_target(self):
+        # (reset.md anchor phrase, file, heading the replacement must re-emit)
+        cases = (
+            (
+                r"locate the section that begins with the line `([^`]+)`",
+                "05-cv-templates.md",
+            ),
+            (
+                r"The entire `([^`]+)` section",
+                "07-interview-prep.md",
+            ),
+        )
+        for pattern, filename in cases:
+            with self.subTest(file=filename):
+                match = re.search(pattern, self.reset)
+                self.assertIsNotNone(match, f"reset.md no longer states its anchor for {filename}")
+                anchor = match.group(1)
+                shipped = (SKILL_DIR / filename).read_text(encoding="utf-8")
+                self.assertIn(
+                    anchor,
+                    shipped,
+                    f"/reset anchors {filename} on {anchor!r}, which the shipped file does not contain - "
+                    "the wipe would silently find nothing",
+                )
+                # The replacement block re-emits the anchor line so the heading survives the wipe.
+                step = self.reset[match.start():]
+                block_start = step.index("```markdown") + len("```markdown")
+                block = step[block_start: step.index("```", block_start)]
+                self.assertIn(anchor, block, f"the replacement for {filename} must keep the heading {anchor!r}")
 
 if __name__ == "__main__":
     unittest.main()

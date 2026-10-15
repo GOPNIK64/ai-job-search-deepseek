@@ -216,10 +216,10 @@ OVERRIDES: dict[str, list[tuple[str, str]]] = {
     # only name and description.
     "add-portal/SKILL.md": [
         (
-            "include trigger phrases in English **and** the market's language; "
-            "`context: fork`; `allowed-tools: Bash(bun run skills/<name>/cli/src/cli.ts *)`.",
-            "include trigger phrases in English **and** the market's language. Keep it free "
-            "of runtime-specific keys (`context`, `allowed-tools`): the portal skills under "
+            "include trigger phrases in English **and** the market's language; `context: fork`; "
+            "`allowed-tools: Bash(bun run .agents/skills/<name>/cli/src/cli.ts *)`.",
+            "include trigger phrases in English **and** the market's language. Keep it free of "
+            "runtime-specific keys (`context`, `allowed-tools`): the portal skills under "
             "`.agents/skills/` are shared by every runtime.",
         )
     ],

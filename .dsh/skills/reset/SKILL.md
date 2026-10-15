@@ -146,7 +146,9 @@ Wait for the user's response.
 
 ### Profile reset
 
-**For `01-candidate-profile.md`**, replace the file content with:
+Every skill file under `.claude/skills/job-application-assistant/` opens with a `---` frontmatter block carrying its `framework_version` marker. That marker is framework data, not candidate data: `tools/check_framework_version.py` fails a file without it, and `tools/check_upstream_updates.py` cannot compare the file against upstream. Never remove or rewrite it - the two full-file replacements below keep it and replace only what follows.
+
+**For `01-candidate-profile.md`**, keep the file's `---` frontmatter block exactly as it is and replace everything below it with:
 
 ```markdown
 # Candidate Profile
@@ -170,7 +172,7 @@ Wait for the user's response.
 ## References
 ```
 
-**For `02-behavioral-profile.md`**, replace the file content with:
+**For `02-behavioral-profile.md`**, keep the file's `---` frontmatter block exactly as it is and replace everything below it with:
 
 ```markdown
 # Behavioral Profile
@@ -179,11 +181,13 @@ Wait for the user's response.
 
 ## Overview
 
-## Strongest Behavioral Traits
+## Core Behavioral Drives
 
-## How I Work Best
+## Strongest Behaviors
 
-## Growth Areas
+## How You Work Best
+
+## Growth Areas (frame positively in applications)
 
 ## Mapping to Job Posting Language
 
@@ -213,12 +217,12 @@ Also remove any `## Calibration from Past Applications` section, which `/setup` 
 
 Leave the rest of `04-job-evaluation.md` intact: the five scoring dimensions and their score bands, the weighting, the Language Gate, the red-flag guidance, the Company Research Checklist and cache schema, and the salary benchmark section. If `/setup` Step 3.4 ever personalizes a value not in the table above, add it here too.
 
-**For `05-cv-templates.md`**, locate the section that begins with `**Profile statement templates` and extends through the role-specific template blocks. Replace only that section with:
+**For `05-cv-templates.md`**, locate the section that begins with the line `**Create 2-3 profile statement templates for your main role types:**` and extends through the role-specific template blocks, including any statements labeled *[Used for: <company>_<role>]* that `/setup` Path A extracted from archived applications. Stop before the paragraph that begins "Statements labeled" - that is framework guidance, not candidate data. Replace only that section with:
 
 ```markdown
-**Profile statement templates:**
+**Create 2-3 profile statement templates for your main role types:**
 
-<!-- Run /setup to populate role-specific profile statements -->
+<!-- SETUP: These are populated based on your background -->
 ```
 
 Then restore the contact block inside the file's LaTeX template to its placeholder tokens: `\name{[FIRST_NAME]}{[LAST_NAME]}`, `\address{[YOUR_ADDRESS]}{}{}`, `\phone[mobile]{[YOUR_PHONE]}`, `\email{[YOUR_EMAIL]}`, the `\extrainfo{...}` line's `[YOUR_LINKEDIN_URL]` and `[YOUR_GITHUB_URL]`, and `[YOUR_NAME]` in the `pdftitle`. Leave all other content in `05-cv-templates.md` intact.
