@@ -17,6 +17,16 @@ To prevent duplication and configuration drift across different AI agent framewo
 > `tools/upstream_triage.py` can keep tracking upstream through the `framework_version`
 > markers, and they are not the layer a `dsh` session should follow. The portal skills in
 > `.agents/skills/` are shared by both runtimes and are byte-identical in each.
+>
+> The ported layer is generated, never hand-edited: `python3 tools/port_skills_to_dsh.py`
+> rebuilds `.dsh/skills/` from `.claude/skills/**` and `.claude/commands/**`, and
+> `tests/test_port_skills_to_dsh.py` fails on any file the converter would not produce.
+> Judgement edits belong in that tool's `OVERRIDES` table.
+>
+> Optional Python dependencies (PyYAML for `tools/lint_skills.py`, pypdf for
+> `tools/verify_pdf.py`, openpyxl for `tools/convert_salary_excel.py`) live in the
+> project's `.venv/`, so run those tools with `.venv/bin/python` when the ambient
+> `python3` does not have them.
 
 1. **Personal Candidate Profile:**
    - The candidate profile, contact details, education, and target preferences are defined in [CLAUDE.md](CLAUDE.md) and the individual profile methodology files under [.claude/skills/job-application-assistant/](.claude/skills/job-application-assistant/) (specifically `01-*.md` etc.).

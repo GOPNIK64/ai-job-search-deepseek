@@ -169,5 +169,56 @@ class SkillAndCommandCheckTests(LinterRepoFixture):
         self.assertIn("must start with a '# /<name>' title", result.stdout)
 
 
+class DshSkillTreeTests(LinterRepoFixture):
+    """dsh's discovery rules. The app enforces them by silently not loading a skill,
+    which is exactly the kind of failure a linter should make loud."""
+
+    def add_dsh_skill(self, dirname: str, body: str | None = None) -> Path:
+        path = self.root / ".dsh" / "skills" / dirname / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            body or "---\nname: example\ndescription: An example dsh skill\n---\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_a_valid_dsh_layer_passes_and_is_counted(self):
+        self.add_dsh_skill("apply")
+        self.add_dsh_skill("rank")
+
+        result = run_linter(self.root)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("2 dsh skills", result.stdout)
+
+    def test_non_kebab_directory_name_fails(self):
+        self.add_dsh_skill("ApplyNow")
+
+        result = run_linter(self.root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not kebab-case", result.stdout)
+
+    def test_a_nested_skill_md_fails_because_dsh_never_reaches_it(self):
+        nested = self.root / ".dsh" / "skills" / "outer" / "inner" / "SKILL.md"
+        nested.parent.mkdir(parents=True)
+        nested.write_text(
+            "---\nname: inner\ndescription: Nested too deep\n---\n", encoding="utf-8"
+        )
+
+        result = run_linter(self.root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("would never load", result.stdout)
+
+    def test_missing_description_fails_in_the_dsh_layer(self):
+        self.add_dsh_skill("nodef", body="---\nname: nodef\n---\n")
+
+        result = run_linter(self.root)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing required key 'description'", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
