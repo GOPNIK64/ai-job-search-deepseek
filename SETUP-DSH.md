@@ -53,6 +53,29 @@ way:
   `ln -s ~/Library/TinyTeX/bin/universal-darwin/lualatex ~/.local/bin/` (same for `xelatex`, `tlmgr`), or
 - skip the question by calling the absolute path in the compile step.
 
+**And finding the binary is only half of it — the sandbox also blocks the font cache.** `dsh`
+runs bash under `workspace-write`, which refuses writes outside the workspace (`touch
+~/Library/TinyTeX/texmf-var` → `Operation not permitted`), and `luaotfload` needs to write its
+metrics there. So a compile that finds the binary can still die. Point TeX's cache inside the
+repo and it stops being an issue:
+
+```sh
+CACHE="$(pwd)/.texcache" && mkdir -p "$CACHE"
+TEXMFCACHE="$CACHE/" TEXMFVAR="$CACHE/" TEXMFCONFIG="$CACHE/" \
+  lualatex -interaction=nonstopmode -halt-on-error main_example.tex
+```
+
+**All three variables, and absolute paths.** `TEXMFCACHE` alone still consults `TEXMFVAR` and
+quits with `no writeable cache path, quiting`; a relative path fails the same way. `.texcache/`
+is gitignored.
+
+Why this is worth two paragraphs: `/apply`'s compiled-PDF verification is a **mandatory** step,
+and it is the only check that catches a structurally broken `.tex`. A `\cventry` missing its
+empty fifth argument produces a brace error that a brace-count check reports as *balanced* — one
+missing `{` and one extra `}` cancel out — so the file looks fine to everything except the
+compiler. If you would rather keep this out of `dsh` entirely, compile in your own terminal:
+there both the PATH and the writes are yours.
+
 **Python ≥3.10 plus the optional packages.** `tools/verify_pdf.py`, `tools/lint_skills.py`
 and `tools/convert_salary_excel.py` need `pypdf`, `PyYAML` and `openpyxl` respectively. Any
 interpreter works; a project venv keeps it out of your system Python:
