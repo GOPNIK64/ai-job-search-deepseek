@@ -10,6 +10,14 @@ This workspace is structured to manage job search activities, scraper tools, CVs
 
 To prevent duplication and configuration drift across different AI agent frameworks (Claude Code, Google Antigravity, Codex, Cursor, Gemini CLI, etc.), this workspace uses a unified thin-pointer design. All agent runtimes should load the canonical specifications and candidate profiles from the files and directories below:
 
+> **Fork note (DeepSeek Harness).** This fork retargets the runtime to `dsh`. The
+> workflow specifications are ported to [.dsh/skills/](.dsh/skills/) — the layer `dsh`
+> discovers, at discovery rank 100. `.claude/skills/` and `.claude/commands/` remain the
+> **upstream mirror**: they are kept so `tools/check_upstream_updates.py` and
+> `tools/upstream_triage.py` can keep tracking upstream through the `framework_version`
+> markers, and they are not the layer a `dsh` session should follow. The portal skills in
+> `.agents/skills/` are shared by both runtimes and are byte-identical in each.
+
 1. **Personal Candidate Profile:**
    - The candidate profile, contact details, education, and target preferences are defined in [CLAUDE.md](CLAUDE.md) and the individual profile methodology files under [.claude/skills/job-application-assistant/](.claude/skills/job-application-assistant/) (specifically `01-*.md` etc.).
 2. **Canonical Workflow Specifications:**
