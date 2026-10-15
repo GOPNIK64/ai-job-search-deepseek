@@ -4,13 +4,18 @@
 The retry exists to get past bot-filtering firewalls on sites whose robots.txt
 permits access. It is never used to override a site that has said no.
 
-WebFetch identifies itself as Claude-User and honors robots.txt, so a 403 has
-two very different causes: a WAF default on a site whose published policy
+This fork runs dsh, whose web_fetch identifies itself as an explicit product
+agent and — unlike Claude Code's WebFetch — does NOT consult robots.txt: nothing
+in its fetch path reads the policy. So this check is the only place the workflow
+honors a site's stated opt-out before escalating, which makes it more load-bearing
+here than it was upstream, not less.
+
+A 403 still has two very different causes: a WAF default on a site whose policy
 allows access, or a site that has actually declined. This tells them apart.
 
 Rules implemented (RFC 9309), deliberately on the cautious side:
   * longest-match wins; on equal specificity Disallow wins
-  * a Disallow for either "*" or "Claude-User" blocks the retry
+  * a Disallow for either "*" or our own agent token blocks the retry
   * blank lines inside a record do not end it (Python's robotparser drops
     rules in that case, which fails open - see tests)
   * 404 means no published policy, which is permission
@@ -23,6 +28,12 @@ Exit 0 = the retry may proceed. Exit 1 = do not retry; go to escalation step 3.
 
 import re, subprocess, sys
 from urllib.parse import urlsplit, unquote
+
+# The agent dsh's fetch actually presents, taken from the `web-fetch-http` package:
+# DEFAULT_USER_AGENT = "deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)".
+# robots.txt matches on the product token, so that is the name a policy would use.
+FETCH_AGENT = 'deepseek-harness'
+FETCH_UA = 'deepseek-harness/0.0.1 (+https://github.com/deepseek-ai)'
 
 BROWSER = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
            '(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36')
@@ -99,15 +110,36 @@ def _match(pattern, path):
     rx = '^' + ''.join('.*' if c == '*' else ('$' if c == '$' else re.escape(c)) for c in pattern)
     return len(pattern) if re.match(rx, path) else -1
 
-def allowed(text, agent, path):
-    g = _groups(text)
-    rules = g.get(agent.lower()) or g.get('*') or []
+def _decide(rules, path):
+    """RFC 9309 decision for one group's rule list: ties go to Disallow (cautious)."""
     best_len, best_allow = -1, True
     for is_allow, pat in rules:
         n = _match(pat, path)
         if n > best_len or (n == best_len and n >= 0 and not is_allow):
             best_len, best_allow = n, is_allow      # ties -> Disallow wins (cautious)
     return True if best_len < 0 else best_allow
+
+def allowed(text, agent, path):
+    g = _groups(text)
+    rules = g.get(agent.lower()) or g.get('*') or []
+    return _decide(rules, path)
+
+def _blocking_group(text, agent, path):
+    """Which group blocks this path, if any: the agent's own, else the wildcard.
+
+    Reported distinctly because naming the agent when only the wildcard declined it is a
+    false statement about that site - and being accurate about what a site actually said
+    is this tool's entire job. A user reading "DISALLOWED for deepseek-harness" would
+    reasonably conclude the site singled out this runtime, which may not be true.
+    """
+    g = _groups(text)
+    own = g.get(agent.lower())
+    if own is not None and not _decide(own, path):
+        return agent
+    wild = g.get('*')
+    if wild is not None and not _decide(wild, path):
+        return 'wildcard "*"'
+    return None
 
 def gate(url):
     parts = urlsplit(url)
@@ -116,7 +148,7 @@ def gate(url):
         path += '?' + parts.query
     robots = f'{parts.scheme}://{parts.netloc}/robots.txt'
     body, last = None, 'no attempt'
-    for ua in ('Claude-User', BROWSER):
+    for ua in (FETCH_UA, BROWSER):
         try:
             text, code = _fetch(robots, ua)
         except Exception as e:
@@ -131,9 +163,9 @@ def gate(url):
         last = 'HTTP %d' % code
     if body is None:
         return 1, 'UNCONFIRMED (%s) - do not retry, go to step 3' % last
-    for a in ('Claude-User', '*'):
-        if not allowed(body, a, path):
-            return 1, f'DISALLOWED for {a} - do not retry, go to step 3'
+    blocked = _blocking_group(body, FETCH_AGENT, path)
+    if blocked:
+        return 1, f'DISALLOWED for {blocked} - do not retry, go to step 3'
     return 0, 'ALLOWED - robots.txt permits this path'
 
 if __name__ == '__main__':
