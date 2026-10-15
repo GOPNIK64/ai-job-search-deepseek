@@ -32,7 +32,14 @@ To prevent duplication and configuration drift across different AI agent framewo
 >
 > Mirror files this fork has edited directly (upstream merges to these will conflict, by
 > design): `.claude/skills/job-application-assistant/09-web-research.md`, whose web-research
-> escalation rule names this runtime's fetch tool and its robots.txt behaviour.
+> escalation rule names this runtime's fetch tool and its robots.txt behaviour; and
+> `README.md`, whose fork block states the port's status and points at `SETUP-DSH.md`.
+>
+> `SETUP-DSH.md` is this fork's install guide for `dsh`. It deliberately does not restate
+> prerequisites — upstream's `SETUP.md` covers Bun, TeX, poppler and the Python environment,
+> and every step there still applies. It documents only the delta: what `dsh` discovers and
+> where, the prerequisites that fail in non-obvious ways, the credential location, the
+> profile-never-pushed rule, the portals, and what is still unverified.
 >
 > Optional Python dependencies (PyYAML for `tools/lint_skills.py`, pypdf for
 > `tools/verify_pdf.py`, openpyxl for `tools/convert_salary_excel.py`) live in the

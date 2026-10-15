@@ -11,18 +11,23 @@
 > Fork of [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search)
 > (MIT, © 2026 Mads Lorentzen) that **retargets the runtime to
 > [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) running
-> DeepSeek models**, instead of Claude Code.
+> DeepSeek models**, instead of Claude Code. **For the `dsh` path read
+> [SETUP-DSH.md](SETUP-DSH.md)** — it adds only what changes; upstream's
+> [SETUP.md](SETUP.md) still covers every prerequisite.
 >
 > Everything that makes this work is upstream's: the job-application methodology
 > (`01..09`), the `/setup` `/scrape` `/rank` `/apply` `/interview` workflows, the portable
 > portal-skill contract, the Python verification tools, the fork-divergence tooling, and
-> the LaTeX templates. See [THANKS.md](THANKS.md). What this fork rewrites is the agent
-> layer — the prompts, which are written in Claude Code's tool vocabulary
-> (`WebSearch`/`WebFetch`/`Agent tool`/`allowed-tools`/`.claude/`) and are being ported to
-> a root `dsh` reads (`.agents/skills/`, `.dsh/skills/`).
+> the LaTeX templates. See [THANKS.md](THANKS.md). What this fork changes is the agent
+> layer: the workflow prompts, ported from Claude Code's tool vocabulary
+> (`WebSearch`/`WebFetch`/`Agent tool`/`allowed-tools`) to the Agent Skills format `dsh`
+> reads.
 >
-> **Status: port in progress.** The portal skills already load in `dsh` unmodified; the
-> workflow layer is next.
+> **Status: the workflow layer is ported.** `dsh` loads 15 entry points from
+> `.dsh/skills/` — the 3 model-invocable skills plus all 12 commands — alongside the 6
+> portal skills from `.agents/skills/`. The entry points are generated, never hand-edited:
+> `tools/port_skills_to_dsh.py` rebuilds them from `.claude/`, and the test suite fails on
+> any file the converter would not produce.
 >
 > Not affiliated with, endorsed by, or sponsored by Anthropic, DeepSeek, or Mads
 > Lorentzen. Upstream is the reference implementation — if you don't need DeepSeek, use
