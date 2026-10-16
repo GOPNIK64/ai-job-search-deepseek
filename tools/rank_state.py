@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""State helper for /rank: select candidates and write results back.
+"""State helper for /rank and /scrape: the only way seen_jobs.json is read.
 
-/rank reads the whole of seen_jobs.json into the model's context to filter it
-by eye (Step 1), then re-emits the whole file to record scores (Step 4). That
-cost is paid on every run regardless of how many jobs are actually scored, and
-it grows for the life of the workspace, since seen_jobs.json is append-only by
-design and most stored entries are `skipped`.
+The state file is append-only by design and most stored entries are `skipped`,
+so pulling it into the model's context costs the whole backlog on every run -
+whether the run is /rank filtering candidates by eye (Step 1) and re-emitting
+the file to record scores (Step 4), or /scrape's Step 0 dedup, which needs one
+answer per stored entry ("is this company+title already seen, and is this URL?")
+and nothing more. That cost grows for the life of the workspace.
 
-This moves the state-file traffic into code. Three subcommands:
+This moves the state-file traffic into code. Four subcommands:
 
   candidates   select the eligible entries for this run and project only the
                fields a scoring agent needs
@@ -29,11 +30,13 @@ this only removes the state file from the conversation.
 
 Usage:
   python3 tools/rank_state.py candidates [--all] [--focus TEXT] [--limit N]
+  python3 tools/rank_state.py keys [--ids-only]
   python3 tools/rank_state.py sweep [--write] [--exclude KEY,KEY]
   python3 tools/rank_state.py apply --results results.json [--dry-run]
 
-Both subcommands print JSON on stdout. Exit 0 on success, 1 on a usage or
-state error, or on `apply` when any result could not be written.
+`candidates`, `sweep` and `apply` print JSON on stdout; `keys` prints one
+tab-separated line per stored entry. Exit 0 on success, 1 on a usage or state
+error, or on `apply` when any result could not be written.
 """
 
 import argparse
@@ -131,6 +134,58 @@ def entry_location_verdict(entry: dict) -> str | None:
         return verdict
     legacy = entry.get("location")
     return legacy if legacy in ("PASS", "FAIL", "FLAG") else None
+
+
+def url_identity(url) -> str:
+    """Dedup identity for a posting URL.
+
+    Scheme, query string, fragment and letter case are tracking, anchor and
+    formatting noise that carry no posting identity, so they are dropped: the
+    same ad stored once with `?utm_source=...`, once with `#apply` and once
+    with a capitalised host must compare equal under Step 2's URL rule, or
+    dedup re-presents a job the workspace has already seen.
+    """
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://", "", text)
+    text = text.split("#", 1)[0].split("?", 1)[0]
+    return (text.rstrip("/") or text).lower()
+
+
+def cmd_keys(args) -> int:
+    """Project the dedup universe /scrape Step 0 needs, one line per entry.
+
+    The line is `<canonical key>\\t<url identity>`: the key answers Step 2's
+    company+title rule and the URL identity answers its URL rule ("skip if the
+    URL matches any existing entry, regardless of that entry's key"), which is
+    the only reason the URL is emitted at all. Nothing else about an entry is
+    needed to decide whether a scraped result is new, so nothing else is
+    printed - this is what keeps the state file out of the context.
+
+    Every status is included: `skipped`, `ranked` and `expired` entries are all
+    already-seen for dedup purposes. `--ids-only` drops the URL and prints just
+    the keys, which is smaller but cannot answer the URL rule.
+
+    A missing state file yields an empty seen set on exit 0 - that is the first
+    /scrape run, not an error - but it is announced on stderr, so a mistyped
+    path shows up instead of silently deduping against nothing and storing
+    every posting twice.
+    """
+    if not args.state.is_file():
+        print(
+            f"no state file at {args.state} - the seen set is empty",
+            file=sys.stderr,
+        )
+        return 0
+    _, seen = load_state(args.state)
+    for key in sorted(seen):
+        entry = seen[key] if isinstance(seen[key], dict) else {}
+        if args.ids_only:
+            print(key)
+        else:
+            print(f"{key}\t{url_identity(entry.get('url'))}")
+    return 0
 
 
 def cmd_candidates(args) -> int:
@@ -396,6 +451,10 @@ def main() -> int:
     cand.add_argument("--focus", help="substring filter over title, company and stored fit notes")
     cand.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="0 for no cap")
     cand.set_defaults(func=cmd_candidates)
+
+    keys = sub.add_parser("keys", parents=[common], help="the dedup projection /scrape Step 0 reads")
+    keys.add_argument("--ids-only", action="store_true", help="print the canonical keys without URLs")
+    keys.set_defaults(func=cmd_keys)
 
     sweep = sub.add_parser("sweep", parents=[common], help="rule 6's expiry pass, no fetch")
     sweep.add_argument("--write", action="store_true", help="persist the expiries")

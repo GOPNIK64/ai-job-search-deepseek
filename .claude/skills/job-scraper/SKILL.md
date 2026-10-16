@@ -5,7 +5,7 @@ description: >
   (LinkedIn, local job boards, and any skills added with /add-portal). Deduplicates
   across runs. Triggers on: job scrape, find jobs, search jobs, new jobs, job search,
   scrape jobs, /scrape
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(bun run .agents/skills/*/cli/src/cli.ts *), Bash(python tools/job_key.py:*), Bash(python3 tools/job_key.py:*), WebFetch, WebSearch, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(bun run .agents/skills/*/cli/src/cli.ts *), Bash(python tools/job_key.py:*), Bash(python3 tools/job_key.py:*), Bash(python tools/rank_state.py keys*), Bash(python3 tools/rank_state.py keys*), WebFetch, WebSearch, Agent, AskUserQuestion
 ---
 
 # Job Scraper
@@ -38,9 +38,19 @@ Optional arguments:
 
 ### Step 0: Load State
 
-1. Read `job_scraper/seen_jobs.json` (create if missing - start with `{"seen": {}}`)
-2. Read `job_search_tracker.csv` to extract already-applied companies+roles
-3. Read `search-queries.md` (this directory) for the search strategy
+**Never read `job_scraper/seen_jobs.json` into the conversation.** It holds every job the workspace has ever seen - most of it `skipped` - so reading it by eye costs the whole backlog on every run and grows for the life of the workspace. Measured on a 569-entry state: ~64k tokens read whole, against ~16k for the projection below (~8k with `--ids-only`). Dedup is a query, so run the query:
+
+```bash
+python3 tools/rank_state.py keys             # one line per entry: <canonical key>\t<url identity>
+python3 tools/rank_state.py keys --ids-only  # keys only, smaller, cannot answer the URL rule
+```
+
+Hold that output as the seen set for Step 2: **the key answers the company+title rule and the URL identity answers the URL rule** (scheme, query and fragment are stripped, so the same ad stored with tracking params still compares equal). Every status is printed - `skipped`, `ranked` and `expired` entries are all already-seen. If the state file does not exist yet, the command announces that on stderr and yields an empty seen set: that is the first-run case, not an error. A notice naming a path you did not expect means the path is wrong, so fix it rather than deduping against nothing.
+
+Then:
+
+1. Read `job_search_tracker.csv` (create if missing, header only) to extract already-applied companies+roles
+2. Read `search-queries.md` (this directory) for the search strategy
 
 ### Step 1: Search
 

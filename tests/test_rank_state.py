@@ -585,5 +585,74 @@ class Apply(RankStateCase):
         self.assertEqual(stored["strengths"], ["new"])
 
 
+class Keys(RankStateCase):
+    """`keys` is /scrape Step 0's read path: the state file never enters the
+    context, so the projection has to answer both of Step 2's dedup rules by
+    itself - company+title (the canonical key) and URL (the url identity)."""
+
+    def run_keys(self, *args, expect=0):
+        proc = subprocess.run(
+            [sys.executable, str(TOOL), "keys", "--state", str(self.state), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(proc.returncode, expect, proc.stderr)
+        return proc.stdout
+
+    def test_one_line_per_entry_in_every_status(self):
+        self.write_state(
+            {
+                "a": entry(),
+                "b": entry(status="ranked", rank_score=70),
+                "c": entry(status="skipped"),
+                "d": entry(status="expired"),
+            }
+        )
+        lines = self.run_keys().splitlines()
+        self.assertEqual(
+            [line.split("\t")[0] for line in lines],
+            ["a", "b", "c", "d"],
+            "every stored entry is already-seen for dedup, whatever its status",
+        )
+
+    def test_line_is_key_tab_url_identity(self):
+        self.write_state({"a": entry(url="https://Example.com/Job/?utm_source=x#apply")})
+        self.assertEqual(self.run_keys().splitlines(), ["a\texample.com/job"])
+
+    def test_url_identity_does_not_fork_one_ad_over_tracking_noise(self):
+        self.write_state(
+            {
+                "a": entry(url="https://x.test/jobs/1?utm_source=a"),
+                "b": entry(url="http://x.test/jobs/1#top"),
+                "c": entry(url="https://x.test/jobs/2"),
+            }
+        )
+        identities = [line.split("\t")[1] for line in self.run_keys().splitlines()]
+        self.assertEqual(identities[0], identities[1])
+        self.assertNotEqual(identities[0], identities[2])
+
+    def test_ids_only_prints_bare_keys(self):
+        self.write_state({"a": entry(), "b": entry()})
+        self.assertEqual(self.run_keys("--ids-only").splitlines(), ["a", "b"])
+
+    def test_output_is_a_projection_not_a_dump(self):
+        self.write_state({"a": entry()})
+        out = self.run_keys()
+        for leaked in ("first_seen", "deadline", "portal", "status", "{", "}"):
+            self.assertNotIn(leaked, out, "the entry body must stay out of the context")
+
+    def test_missing_state_is_an_empty_seen_set_but_says_so(self):
+        proc = subprocess.run(
+            [sys.executable, str(TOOL), "keys", "--state", str(self.tmp / "absent.json")],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(proc.returncode, 0, "the first /scrape run is not an error")
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("empty", proc.stderr, "a mistyped path must not dedup silently")
+
+
 if __name__ == "__main__":
     unittest.main()
