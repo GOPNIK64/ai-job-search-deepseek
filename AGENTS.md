@@ -32,8 +32,18 @@ To prevent duplication and configuration drift across different AI agent framewo
 >
 > Mirror files this fork has edited directly (upstream merges to these will conflict, by
 > design): `.claude/skills/job-application-assistant/09-web-research.md`, whose web-research
-> escalation rule names this runtime's fetch tool and its robots.txt behaviour; and
-> `README.md`, whose fork block states the port's status and points at `SETUP-DSH.md`.
+> escalation rule names this runtime's fetch tool and its robots.txt behaviour; `README.md`,
+> whose fork block states the port's status and points at `SETUP-DSH.md`; and the pair that
+> came from wiring `/scrape` Step 0 to the existing projection instead of reading the state
+> file whole - `.claude/skills/job-scraper/SKILL.md` (now queries `tools/rank_state.py keys`)
+> and `tools/rank_state.py` itself (a fourth subcommand, `keys`, with tests).
+>
+> Those last two are the only divergences here that are **not** runtime-specific: they help a
+> Claude Code user identically, because upstream has already solved the same problem for
+> `/rank` (its `candidates`/`apply` subcommands) and left `/scrape` as the caller that still
+> reads the whole file. When the change lands upstream, both files revert to upstream's own
+> content and the divergence disappears - so treat them as a PR waiting to happen, not as
+> something to maintain here.
 >
 > `SETUP-DSH.md` is this fork's install guide for `dsh`. It deliberately does not restate
 > prerequisites — upstream's `SETUP.md` covers Bun, TeX, poppler and the Python environment,
