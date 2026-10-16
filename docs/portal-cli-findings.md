@@ -141,3 +141,28 @@ listings: 31 of 37 URLs in one sample pointed at other domains, all with
 
 Its posting URLs return HTTP 403 to both `web_fetch` and `curl` with browser
 headers, so no result from this portal can be verified or stored.
+
+## 11. `freehire-search`: part of the feed arrives as aggregator URLs that cannot be fetched
+
+Some results carry a third-party aggregator URL (`whatjobs.com`, by country
+subdomain: `uk.`, `en-ca.`, `es.`, `pl.`, `nl.`, `it.`, `fr.`, `pt.`) instead of
+the employer's own posting page. Those URLs do not resolve:
+
+```
+$ curl … "https://es.whatjobs.com/pub_api__cpl__358950384__7107?geoID=425"
+http=403   <title>Just a moment…</title>    # Cloudflare challenge, same class as finding 10
+```
+
+Observed in one workspace's stored state: **213 of 569 URLs (37%)** across
+several sweeps were `whatjobs.com` links - and they are concentrated in this one
+portal, not spread across the feeds: **213 of `freehire-search`'s 362 stored rows
+(58%)**, against **0 of 207** for `linkedin-search`, `jobindex-search`,
+`jobnet-search` and `jobdanmark-search` combined.
+
+Consequence for any consumer: a stored aggregator URL is unverifiable, so a
+downstream step that must fetch the posting (a ranking or an application pass)
+spends its full retrieval escalation - portal `detail`, `web_fetch`, `curl` with
+browser headers, employer-site search - only to conclude "expired", once per
+row. Prefer the employer's own URL when the feed offers one, verify that a URL
+resolves before storing it, or record the aggregator link as a lower-confidence
+finding rather than a normal result.
