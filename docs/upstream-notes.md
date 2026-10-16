@@ -88,3 +88,38 @@ grows. Cost of the change when it comes: two coupled prompt edits (Step 1b
 persistence, Step 2 dedup), a new tool surface (input format, tracker exclusion,
 output schema) and tests - a materially bigger PR than the `keys` fix, which is
 precisely why they ship separately.
+
+## Two framework items recorded during the first `/apply` run (2026-10-15)
+
+Both are framework-level, not application-level: they were found while applying to
+Naranja X and are deliberately **not** fixed in that run.
+
+**1. The source-host semaphore flagged the employer's own ATS - RESOLVED.** `/apply`
+Step 1's Source Host Verification treated a closed list of six ATS apexes as trusted.
+Teamtailor is not on it, so `naranjax.na.teamtailor.com` - the employer's own branded
+careers site, linked from `careers.naranjax.com`, and the *richer* of the two sources
+(it recovered the ATS grade, the second office and the hybrid status the LinkedIn copy
+omitted) - was reported to the user as an unverified host. Fixed in the framework on
+2026-10-15: `.claude/commands/apply.md` now accepts the ATS vendors that host
+employer-branded career sites in the markets this fork scans (teamtailor.com and the
+Nordic/DACH set), plus a provenance-based acceptance for an employer self-hosted on a
+vendor no list catalogues, with `tests/test_apply_host_check.py` covering it. Registered
+as the fork's third divergence in `AGENTS.md`, and it is the one of the three that is
+useful to a Claude Code user unchanged, so it is a candidate to send upstream when the
+PR queue reopens. Nothing further to do here.
+
+**2. The AI-tooling naming rule contradicts itself across two layers.** `CLAUDE.md`
+ends with "explicitly reference **Claude Code** by name". The ported `/apply` body says
+the opposite: name "**DeepSeek Harness** and DeepSeek models in this fork - never a
+generic 'AI tools', and never a tool the candidate has not actually used". A drafter
+that follows either one violates the other, letter by letter.
+
+The dsh-side sentence is **not** in `.claude/commands/apply.md` (where a reader would
+look first): it is injected at port time by the `OVERRIDES` table in
+`tools/port_skills_to_dsh.py` (line 197), which is why grepping `.claude/` for it comes
+back empty and only `.dsh/skills/apply/SKILL.md` carries it. Both tools are real and
+both are declared in the profile's Software list (Claude Code as the agent-assisted
+development tool, `dsh` as the runtime in use now), so the fix is one edit to
+`CLAUDE.md` and one to that OVERRIDES entry, both pointing at the profile list instead
+of naming a single tool, followed by a port regeneration and the drift test. Resolve it
+once, in those two places, not per application.

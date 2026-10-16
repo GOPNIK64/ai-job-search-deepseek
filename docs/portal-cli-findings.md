@@ -166,3 +166,25 @@ browser headers, employer-site search - only to conclude "expired", once per
 row. Prefer the employer's own URL when the feed offers one, verify that a URL
 resolves before storing it, or record the aggregator link as a lower-confidence
 finding rather than a normal result.
+
+## 12. `jobindex-search`: `search` and `detail` disagree on `deadline` for the same posting
+
+Same listing id, two different application deadlines, from the same CLI:
+
+```
+$ … search -q "automatiseringsspecialister" --jobage 9999 --format json
+  id: r14036793 | deadline: 2026-12-05 | date: 2026-10-07
+$ … detail r14036793 --format json
+  id: r14036793 | deadline: 2026-10-21
+```
+
+The two commands read different fields upstream, and nothing in the output
+flags the disagreement. A consumer that stores the `search` deadline and later
+refreshes it from `detail` (the usual "freshest fetch wins" rule) silently
+rewrites the value - and because a near deadline is treated as urgency, the
+rewrite can turn an eight-week-old listing into a seven-day panic.
+
+Occurrence measured: 1 conflict in the 13 rows of one batch that carried any
+deadline at all. Treat a `deadline` as portal-reported, not verified, and keep
+the source (`search` vs `detail`) alongside it if the difference matters.
+
