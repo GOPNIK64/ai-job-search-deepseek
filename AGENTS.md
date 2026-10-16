@@ -45,6 +45,15 @@ To prevent duplication and configuration drift across different AI agent framewo
 > content and the divergence disappears - so treat them as a PR waiting to happen, not as
 > something to maintain here.
 >
+> **The marker checker does not watch those two files.** `tools/check_upstream_updates.py`
+> compares a fixed list of 11 paths (the nine profile files, the assistant's `SKILL.md`, and
+> this file) and neither `job-scraper/SKILL.md` nor `tools/rank_state.py` is on it - so it
+> reports "All framework files are up to date with upstream/master" while both are edited.
+> When the question is whether upstream has touched them, run `tools/upstream_triage.py`
+> (commit-level, patch-id based, no marker list); that is the net that covers them. Do not
+> invent a local marker for them: a marker has to come from upstream, and adding one here
+> would be a third divergence.
+>
 > `SETUP-DSH.md` is this fork's install guide for `dsh`. It deliberately does not restate
 > prerequisites — upstream's `SETUP.md` covers Bun, TeX, poppler and the Python environment,
 > and every step there still applies. It documents only the delta: what `dsh` discovers and
