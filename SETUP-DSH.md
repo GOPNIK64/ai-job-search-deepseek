@@ -107,7 +107,7 @@ context) use the same model unless you configure otherwise.
 ## 4. First run
 
 ```sh
-git clone https://github.com/mancommunis/ai-job-search-deepseek
+git clone https://github.com/GOPNIK64/ai-job-search-deepseek
 cd ai-job-search-deepseek
 ```
 
