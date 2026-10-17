@@ -188,3 +188,166 @@ Occurrence measured: 1 conflict in the 13 rows of one batch that carried any
 deadline at all. Treat a `deadline` as portal-reported, not verified, and keep
 the source (`search` vs `detail`) alongside it if the difference matters.
 
+Two more instances in a later batch, both off by one day in the *other*
+direction, which rules out "the search field is simply stale":
+
+```
+ad "…udvikler til vores AI-team"   stored (search) 2026-12-13 | ad text 2026-11-08
+ad "Senior Backend Developer (Python)" stored 2026-11-18 | ad text 2026-11-19
+```
+
+Three independent divergences, two of them within a day and one six weeks, is
+the signature of two different upstream fields rather than clock skew.
+
+## 13. `jobindex-search detail` is intermittently unparseable on `r`-prefixed ads
+
+Some `r…` ids come back as `PARSE_ERROR` while `h…` ids on the same run work,
+and a rerun of a previously-working `r…` id has also failed:
+
+```
+$ … detail r14052181 --format json     -> PARSE_ERROR
+$ … detail h1708127 h1708003 h1707947 h1708213 --format json -> ok
+$ … detail r14036793 --format json     -> ok (earlier run)
+```
+
+Consequence: a batch agent must escalate rather than conclude "expired". In one
+lot of six postings every `detail` call returned only a teaser - job title,
+company and a one-line summary, no body - and `curl` with browser headers
+recovered the full text for all six. `detail` returning little is therefore an
+escalation trigger, not a dead posting.
+
+## 14. A `302` to the employer's own site is a normal `detail` outcome
+
+`h1706827` redirected (302) to the employer's careers page instead of serving
+the ad, because the listing had been filled from the employer's own ATS. The
+same id had served the full ad when the state entry was created. Anything that
+treats a redirect as a failed fetch loses a live posting; follow it, or fall
+back to the employer's vacancy API (a MindKey-based board answered one).
+
+## 15. The same posting can exist under two keys from one portal
+
+`h1706975` (jobindex) and `r14046049` (the same portal, different ad family)
+resolve to the **same** Patent- og Varemærkestyrelsen posting - same title, same
+body, same deadline. The store keyed them separately because the dedup identity
+is company+title and the two feeds spell the company differently between the
+two records. Both rows survived into a ranking batch and were scored twice.
+
+The cost is bounded while the two records agree. It stops being bounded when
+they drift: one gets a fresh deadline and the other keeps the old one, and the
+expiry sweep then retires half a posting.
+
+## 16. An aggregator's uuid-to-posting mapping is not stable over time
+
+`laraveldk.org/jobs/42539c89-15bb-4355-8e21-bb88dffc7119` was stored against an
+Adversus posting. Fetched by an agent, it 302-redirected to a **Redpill Linpro**
+posting (`…/senior-platform-engineer-at-redpill-linpro-4469440663`) - a
+different employer, already present in the store under its own row. Fetched
+again minutes later, the same URL 302-redirected to the correct Adversus
+posting (`…/senior-full-stack-developer-at-adversus-4478534383`).
+
+So the defect is worse than a bad link: the mapping between an aggregator's
+opaque id and the posting it serves can change between two requests. A URL that
+resolves correctly today is not evidence it will resolve tomorrow, and a
+consumer that trusted it would have ranked one employer's ad under another
+employer's row.
+
+
+
+## 17. On `whatjobs.*`, HTTP 200 means three different things, none of them "live"
+
+One batch hit every shape, from different country subdomains of the same
+aggregator:
+
+```
+pl.whatjobs.com/...   -> 403 (bot rejection)
+cl.whatjobs.com/...   -> 200 with a Cloudflare "Just a moment" challenge page
+es.whatjobs.com/pub_api__cpl__360035282__7107 -> 200, a redirect shell that
+                         bounces to the aggregator's own homepage with no
+                         requisition anywhere in the HTML
+```
+
+A consumer that treats a 200 as liveness stores a shell as a posting. The same
+batch produced the mirror case on the employer side, where a 200 is a *closed*
+posting: `careers.capgemini.com` rendered "Sorry, this position has been
+filled." with no description, an EY requisition served "The Job is no longer
+available", and a third employer's URL answered **410**. Status codes are not
+liveness on either side; only fetched text is.
+
+## 18. The aggregator's `company` field is sometimes the ATS vendor, not the employer
+
+Six of 50 rows in one batch carried a company that names no employer:
+
+```
+"Lever, Inc."            (from a Lever-hosted URL)      x2
+"SmartRecruiters, Inc."  (from a SmartRecruiters URL; the employer was Version 1, Dublin)
+"unknown-company"        (EURES rows with no employer in the ad)  x3
+"Jobgether"              (an intermediary that manages the application)
+```
+
+This is worse than a wrong label: the store's dedup identity **is** company+title
+(`tools/rank_state.py`), and `/rank`'s tracker exclusion compares the same pair.
+Two requisitions from one recruiter, or two rows sharing the vendor name, can
+collide or fail to collide on a field that never described the employer. One
+row had no recoverable employer at all and had to be reported rather than
+scored.
+
+## 19. The upstream index is the reliable recovery path, and it beats the employer's own page
+
+For a row whose stored URL is an aggregator copy, the aggregator's **upstream
+source** holds the requisition text that the copy dropped. `freehire-search`'s
+`search`/`detail` returned the full stored description for rows whose
+`whatjobs`, `adzuna` or `europa.eu` URL failed, and **25 of 28 aggregator rows in
+one batch were still scored** because of it. Caveat: the index sometimes keeps
+only a summary (one row's own record was 415 characters while the same employer's
+same-day sibling posting carried the complete requirements), so a thin index
+record is a reason to cross-check, not a substitute for the employer's page.
+
+Employer-side techniques that worked in the same batch, in order of reliability:
+
+| Host | What fails | What works |
+|---|---|---|
+| Adzuna copies | sometimes 403 | often serve the employer's full text under `web_fetch` |
+| Ashby (`jobs.ashbyhq.com`) | `web_fetch` shows only the title | `curl` returns a `<script type="application/ld+json">` JobPosting block with the whole description |
+| Zoho Recruit | nothing readable in the DOM | the description sits in `var jobs = JSON.parse('...')`; decode `\xNN` escapes and drop invalid `\-` escapes |
+| Greenhouse, Recruitee, Teamtailor, d.vinci, join.com | - | read directly |
+| EURES (`europa.eu`) | an Angular SPA: raw fetch returns a 68 KB "Loading..." shell with no server-rendered text | recover the requisition through the upstream index, then reach the employer's own page when the ad names one |
+
+EURES is worth calling out because it is **not** an aggregator copy: it is an
+official EU portal that renders client-side, so it fails the same way an
+aggregator shell does while being a first-class source. Treating `europa.eu` as
+"just another aggregator" (as one rubric did) mislabels it; treating it as
+readable text is worse.
+
+## 20. A duplicate that diverges is worse than a duplicate that agrees
+
+Finding 15 measured the same requisition stored under two keys. A later batch
+showed why that stops being cosmetic: the two copies were read by different
+agents and came back with **opposite gate verdicts on the same posting**.
+
+```
+movilges-it-consulting_…-angular-nestjs-hybrid        language_gate: PASS
+   note: "Ingles/Portugues fluentes sao valorizados" (fluency valued, not demanded)
+movilges-it-consulting_senior-full-stack-tech-lead    language_gate: FAIL
+   note: "Portugues e Ingles fluentes (Espanhol valorizado)" (Portuguese demanded)
+```
+
+The second reading is the correct one - the parenthetical marks *Spanish* as the
+valued extra, which makes Portuguese a condition - and the first row's verdict is
+wrong on the same text. Whichever copy a later step reads decides whether the
+role is vetoed or ranked, and the store has no way to notice the disagreement.
+
+The same batch produced four more pairs of one-requisition-two-keys rows
+(Software Mind, TRBL Services, Leonardo full-stack, Dell 299231 - the last one
+under two different company labels). Measured cost of the gap, one batch: five
+pairs, one opposite verdict, one posting credited to the wrong employer in the
+feed's own `company` field.
+
+## Upstream responses (maintainer reply, discussion #78, 2026-10-15)
+
+The maintainer cloned the fork, read the delta, and answered the three observations raised with it. Recording the answers here so a later session does not re-report them as open problems:
+
+- **Finding 3 (`--region us` returns zero).** Treated as a documentation or mapping bug, not a usage error: the skill documents `us` as a macro-region code, so if the API only answers `north_america`, the skill is wrong about its own parameter. Filed as an issue at the maintainer's request, with the two commands and their result counts.
+- **`jobnet-search detail` returning 404 on external ads.** That URL class (`/find-job/`) was fixed for *search* in #557 (merged 2026-10-15, already in this fork's base). `detail` keeps falling back to the search summary **by design**, and #550 (in review) marks that fallback on stdout. The observation was accurate and is being handled upstream - nothing to change here.
+- **Finding 10 (`jobbank-search` blocked by Cloudflare).** Documented behaviour in that skill's `SKILL.md` and README: the CLI reports the block and `/scrape` falls back to WebSearch. Keeping the portal `enabled: true` is therefore correct, not a misconfiguration.
+
+Do **not** re-report the second and third items as open findings, and keep the `--region us` issue as the one open upstream thread from this file.

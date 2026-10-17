@@ -584,6 +584,244 @@ class Apply(RankStateCase):
         self.assertEqual(stored["rank_score"], 90)
         self.assertEqual(stored["strengths"], ["new"])
 
+    def test_compensation_verdict_and_city_note_are_persisted(self):
+        """The calibrated framework's compensation gate and the city note its
+        location rule asks for are verdicts, not prose. If apply drops them the
+        only place they survive is the run's own report, which is exactly the
+        gap that made 'PASS with a note naming the city' unenforceable."""
+        self.write_state({"a": entry()})
+        self.run_tool(
+            "apply",
+            "--results",
+            self.results(
+                [
+                    {
+                        "key": "a",
+                        "status": "scored",
+                        "scores": {"technical": 50, "experience": 50, "behavioral": 50, "career": 50},
+                        "location_verdict": "PASS",
+                        "location_note": "Aarhus, Denmark (on-site)",
+                        "compensation_gate": "FAIL",
+                        "compensation_note": 'Salary Unpaid - "This is an unpaid internship"',
+                    }
+                ]
+            ),
+        )
+        stored = self.read_state()["a"]
+        self.assertEqual(stored["location_note"], "Aarhus, Denmark (on-site)")
+        self.assertEqual(stored["compensation_gate"], "FAIL")
+        self.assertEqual(
+            stored["compensation_note"], 'Salary Unpaid - "This is an unpaid internship"'
+        )
+
+    def test_a_pass_compensation_verdict_drops_a_stale_note(self):
+        self.write_state({"a": entry(compensation_gate="FAIL", compensation_note="stale: unpaid")})
+        self.run_tool(
+            "apply",
+            "--results",
+            self.results(
+                [
+                    {
+                        "key": "a",
+                        "status": "scored",
+                        "scores": {"technical": 50, "experience": 50, "behavioral": 50, "career": 50},
+                        "compensation_gate": "PASS",
+                    }
+                ]
+            ),
+        )
+        stored = self.read_state()["a"]
+        self.assertEqual(stored["compensation_gate"], "PASS")
+        self.assertNotIn("compensation_note", stored)
+
+
+class Edit(RankStateCase):
+    """`edit` exists for the corrections a scoring run cannot express: a row a
+    gate refuses has to stop coming back in later batches, a mis-paired URL has
+    to be blanked, and a language verdict can change while the score stands
+    still. The guarantee under test is the negative one - it never re-scores."""
+
+    def updates(self, items):
+        path = self.tmp / "updates.json"
+        path.write_text(json.dumps(items), encoding="utf-8")
+        return str(path)
+
+    def test_marking_a_row_skipped_keeps_it_out_of_every_later_batch(self):
+        self.write_state({"a": entry(status="new")})
+        out = self.run_tool(
+            "edit",
+            "--updates",
+            self.updates(
+                [
+                    {
+                        "key": "a",
+                        "set": {
+                            "status": "skipped",
+                            "compensation_gate": "FAIL",
+                            "compensation_note": 'Salary Unpaid - "unpaid internship"',
+                        },
+                    }
+                ]
+            ),
+        )
+        self.assertEqual(out["errors"], [])
+        stored = self.read_state()["a"]
+        self.assertEqual(stored["status"], "skipped")
+        self.assertEqual(stored["compensation_note"], 'Salary Unpaid - "unpaid internship"')
+        for extra in ([], ["--all"]):
+            cand = self.run_tool("candidates", *extra, "--tracker", str(self.tmp / "none.csv"))
+            self.assertEqual(
+                cand["selected"], [], "a skipped row is not a candidate, not even under --all"
+            )
+
+    def test_blanking_a_mispaired_url_can_flag_the_row_for_re_scrape(self):
+        self.write_state({"a": entry(url="https://laraveldk.org/jobs/not-this-employer")})
+        self.run_tool(
+            "edit",
+            "--updates",
+            self.updates([{"key": "a", "set": {"url": None, "needs_rescrape": True}}]),
+        )
+        stored = self.read_state()["a"]
+        self.assertNotIn("url", stored, "an empty URL beats one that points at another employer")
+        self.assertTrue(stored["needs_rescrape"])
+
+    def test_a_language_verdict_can_change_without_the_score_moving(self):
+        self.write_state(
+            {
+                "a": entry(
+                    status="ranked",
+                    rank_score=36,
+                    rank_verdict="Weak Fit",
+                    rank_date="2026-10-01",
+                    language_gate="FLAG",
+                    language_note='"Fluent in English"',
+                    strengths=["kept"],
+                    gaps=["kept"],
+                )
+            }
+        )
+        self.run_tool(
+            "edit",
+            "--updates",
+            self.updates([{"key": "a", "set": {"language_gate": "PASS", "language_note": None}}]),
+        )
+        stored = self.read_state()["a"]
+        self.assertEqual(stored["language_gate"], "PASS")
+        self.assertNotIn("language_note", stored)
+        self.assertEqual(
+            (stored["rank_score"], stored["rank_verdict"], stored["rank_date"]),
+            (36, "Weak Fit", "2026-10-01"),
+            "the score, its band and its date are apply's to write, never a correction's",
+        )
+        self.assertEqual(stored["strengths"], ["kept"])
+        self.assertEqual(stored["gaps"], ["kept"])
+
+    def test_it_refuses_to_touch_the_score_or_its_evidence(self):
+        self.write_state({"a": entry(status="ranked", rank_score=70, strengths=["kept"])})
+        out = self.run_tool(
+            "edit",
+            "--updates",
+            self.updates([{"key": "a", "set": {"rank_score": 99}}]),
+            expect=1,
+        )
+        self.assertIn("never re-scores", out["errors"][0]["error"])
+        self.assertEqual(self.read_state()["a"]["rank_score"], 70)
+
+    def test_it_refuses_an_unknown_field_and_an_unreachable_status(self):
+        self.write_state({"a": entry()})
+        out = self.run_tool(
+            "edit",
+            "--updates",
+            self.updates(
+                [
+                    {"key": "a", "set": {"deadline": "2026-01-01"}},
+                    {"key": "a", "set": {"status": "expired"}},
+                ]
+            ),
+            expect=1,
+        )
+        self.assertEqual(len(out["errors"]), 2)
+        self.assertIn("not an editable field", out["errors"][0]["error"])
+        self.assertIn("must be one of", out["errors"][1]["error"])
+        self.assertEqual(self.read_state()["a"]["status"], "new")
+
+    def test_an_unknown_key_is_an_error_not_a_silent_no_op(self):
+        self.write_state({"a": entry()})
+        out = self.run_tool(
+            "edit",
+            "--updates",
+            self.updates([{"key": "nope", "set": {"status": "skipped"}}]),
+            expect=1,
+        )
+        self.assertEqual(out["changed"], [])
+        self.assertEqual(out["errors"][0]["key"], "nope")
+
+    def test_the_recovered_employer_can_replace_an_ats_vendor_name(self):
+        """`company` is half the dedup identity, so a row whose company field
+        holds the ATS vendor ("Lever, Inc.") or "unknown-company" cannot collide
+        with - or be found alongside - the same employer's other postings until
+        the real name is written. The key string itself stays as it was; the
+        provenance field keeps what the feed claimed."""
+        self.write_state({"lever-inc_remote-angular-developer": entry(company="Lever, Inc.")})
+        out = self.run_tool(
+            "edit",
+            "--updates",
+            self.updates(
+                [
+                    {
+                        "key": "lever-inc_remote-angular-developer",
+                        "set": {
+                            "company": "Acme Logistics",
+                            "employer_recovered": "Lever, Inc.",
+                            "needs_rescrape": True,
+                        },
+                    }
+                ]
+            ),
+        )
+        self.assertEqual(out["errors"], [])
+        stored = self.read_state()["lever-inc_remote-angular-developer"]
+        self.assertEqual(stored["company"], "Acme Logistics")
+        self.assertEqual(stored["employer_recovered"], "Lever, Inc.")
+        self.assertTrue(stored["needs_rescrape"])
+
+    def test_a_parked_row_can_be_skipped_with_its_reason(self):
+        """The second failure of the same unreachable URL ends the retry, and
+        the reason has to outlive the run that decided it."""
+        self.write_state({"a": entry(needs_rescrape=True)})
+        self.run_tool(
+            "edit",
+            "--updates",
+            self.updates(
+                [
+                    {
+                        "key": "a",
+                        "set": {
+                            "status": "skipped",
+                            "skip_reason": "aggregator 403 on the second attempt; no employer copy reachable",
+                        },
+                    }
+                ]
+            ),
+        )
+        stored = self.read_state()["a"]
+        self.assertEqual(stored["status"], "skipped")
+        self.assertIn("second attempt", stored["skip_reason"])
+        cand = self.run_tool("candidates", "--all", "--tracker", str(self.tmp / "none.csv"))
+        self.assertEqual(cand["selected"], [])
+
+    def test_dry_run_reports_the_change_without_writing_it(self):
+        self.write_state({"a": entry()})
+        out = self.run_tool(
+            "edit",
+            "--dry-run",
+            "--updates",
+            self.updates([{"key": "a", "set": {"status": "skipped"}}]),
+        )
+        self.assertFalse(out["written"])
+        self.assertEqual(out["changed"][0]["now"]["status"], "skipped")
+        self.assertEqual(self.read_state()["a"]["status"], "new")
+
 
 class Keys(RankStateCase):
     """`keys` is /scrape Step 0's read path: the state file never enters the

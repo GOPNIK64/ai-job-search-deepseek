@@ -370,6 +370,20 @@ def cmd_apply(args) -> int:
             entry.pop("language_note", None)
         else:
             entry["language_note"] = result.get("language_note")
+        # Two more verdicts the calibrated framework produces must outlive the
+        # run: the compensation gate (04's hard filter on unpaid and
+        # equity-only roles) and the city note the location rule asks for on a
+        # hybrid or on-site role in a city he does not live in. Both additive,
+        # and a PASS compensation verdict drops a stale note exactly the way a
+        # PASS language gate does.
+        if result.get("location_note"):
+            entry["location_note"] = str(result["location_note"])
+        if result.get("compensation_gate"):
+            entry["compensation_gate"] = result["compensation_gate"]
+            if entry["compensation_gate"] == "PASS":
+                entry.pop("compensation_note", None)
+            elif result.get("compensation_note"):
+                entry["compensation_note"] = str(result["compensation_note"])
         # Absence is not a correction: a fetch that degraded to a listing page
         # returns no deadline, and blanking a stored one would erase a real
         # date and make the entry immortal to rule 6's sweep.
@@ -390,8 +404,11 @@ def cmd_apply(args) -> int:
                 "score": score,
                 "verdict": entry["rank_verdict"],
                 "location_verdict": entry["location_verdict"],
+                "location_note": entry.get("location_note"),
                 "language_gate": entry["language_gate"],
                 "language_note": entry.get("language_note"),
+                "compensation_gate": entry.get("compensation_gate"),
+                "compensation_note": entry.get("compensation_note"),
                 "deadline": entry.get("deadline"),
                 "posted_date": entry.get("posted_date"),
                 "urgent": bool(parsed and today <= parsed <= today + timedelta(days=URGENT_DAYS)),
@@ -416,6 +433,121 @@ def cmd_apply(args) -> int:
                 "errors": errors,
                 "written": not args.dry_run,
             },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 1 if errors else 0
+
+
+EDIT_ENUMS = {
+    # Reachable statuses are restricted on purpose. "ranked" and "expired" both
+    # require evidence apply or sweep already holds (a score, a date
+    # comparison), so reaching them from here would be a re-score wearing a
+    # correction's name. These two are the corrections /rank actually needs:
+    # retiring a row a gate refuses, and putting one back in the queue.
+    "status": ("skipped", "new"),
+    "language_gate": ("PASS", "FAIL", "FLAG"),
+    "location_verdict": ("PASS", "FAIL", "FLAG"),
+    "compensation_gate": ("PASS", "FAIL"),
+}
+EDIT_FREE = (
+    "url",
+    # The aggregator's `company` field is sometimes the ATS vendor ("Lever,
+    # Inc.", "SmartRecruiters, Inc.") or a literal "unknown-company", which
+    # poisons the dedup identity - company+title is the key. Writing the
+    # recovered employer here is what makes such a row collidable and
+    # applicable again; `employer_recovered` keeps the vendor name for
+    # provenance, and the key string itself is immutable.
+    "company",
+    "employer_recovered",
+    "language_note",
+    "location_note",
+    "compensation_note",
+    # A row parked on an unreachable URL gets one more batch, then a skip with
+    # the reason recorded rather than an unbounded retry loop.
+    "skip_reason",
+)
+EDIT_BOOL = ("needs_rescrape",)
+# Named so the refusal is explicit rather than a silent no-op: these carry a
+# score or the evidence behind one, and a correction must never become a
+# re-score. That guarantee is the reason this subcommand exists.
+SCORE_FIELDS = ("scores", "rank_score", "rank_verdict", "rank_date", "strengths", "gaps")
+
+
+def cmd_edit(args) -> int:
+    """Apply the gate and status corrections that need neither a fetch nor a score.
+
+    State grows rows the scoring runs cannot express: a role the compensation
+    gate refuses has to stop coming back in later batches, a mis-paired URL has
+    to be blanked, and a language verdict can change while the score stands
+    still. None of those is a re-score, so none of them belongs in `apply`.
+    """
+    doc, seen = load_state(args.state)
+    try:
+        updates = json.loads(Path(args.updates).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        sys.exit(f"cannot read updates file {args.updates}: {exc}")
+    if isinstance(updates, dict):
+        updates = updates.get("updates", [])
+    if not isinstance(updates, list):
+        sys.exit("updates file must be a JSON array of {key, set} objects")
+
+    changed, errors = [], []
+    for item in updates:
+        if not isinstance(item, dict):
+            errors.append({"key": None, "error": "each update must be an object with key and set"})
+            continue
+        key, fields = item.get("key"), item.get("set")
+        entry = seen.get(key)
+        if entry is None:
+            errors.append({"key": key, "error": "no such key in seen_jobs.json"})
+            continue
+        if not isinstance(fields, dict) or not fields:
+            errors.append({"key": key, "error": "nothing to set"})
+            continue
+        bad = None
+        for name, value in fields.items():
+            if name in SCORE_FIELDS:
+                bad = f"'{name}' carries a score; edit never re-scores"
+            elif name in EDIT_ENUMS:
+                if value not in EDIT_ENUMS[name]:
+                    bad = f"'{name}' must be one of {EDIT_ENUMS[name]}"
+            elif name in EDIT_FREE:
+                if value is not None and not isinstance(value, str):
+                    bad = f"'{name}' must be a string or null"
+            elif name in EDIT_BOOL:
+                if not isinstance(value, bool):
+                    bad = f"'{name}' must be true or false"
+            else:
+                bad = f"'{name}' is not an editable field"
+            if bad:
+                break
+        if bad:
+            errors.append({"key": key, "error": bad})
+            continue
+        was = {name: entry.get(name) for name in fields}
+        for name, value in fields.items():
+            if value is None:
+                entry.pop(name, None)
+            else:
+                entry[name] = value
+        changed.append(
+            {
+                "key": key,
+                "title": entry.get("title"),
+                "company": entry.get("company"),
+                "status": entry.get("status"),
+                "changed": {n: was[n] for n in fields if was[n] != entry.get(n)},
+                "now": {n: entry.get(n) for n in fields},
+            }
+        )
+
+    if not args.dry_run:
+        save_state(args.state, doc)
+    print(
+        json.dumps(
+            {"changed": changed, "errors": errors, "written": not args.dry_run},
             indent=2,
             ensure_ascii=False,
         )
@@ -465,6 +597,13 @@ def main() -> int:
     app.add_argument("--results", required=True, help="JSON array from the scoring agents")
     app.add_argument("--dry-run", action="store_true")
     app.set_defaults(func=cmd_apply)
+
+    edit = sub.add_parser(
+        "edit", parents=[common], help="gate and status corrections that never re-score"
+    )
+    edit.add_argument("--updates", required=True, help="JSON array of {key, set} objects")
+    edit.add_argument("--dry-run", action="store_true")
+    edit.set_defaults(func=cmd_edit)
 
     args = ap.parse_args()
     return args.func(args)
