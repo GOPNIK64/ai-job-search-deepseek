@@ -89,7 +89,9 @@ SEARCH FLAGS
                           full description is rendered (json output only).
 
 FACET FILTERS (values from freehire.me's controlled vocabularies; comma = OR)
-  --region <codes>        Macro-region: global, eu, us, apac, latam, cis, ...  e.g. --region eu,us
+  --region <codes>        Macro-region: global, eu, uk, north_america, latam, apac,
+                          mena, africa, cis  e.g. --region eu,uk
+                          (a country such as us goes in --country, not here)
   --country <codes>       ISO-3166 alpha-2, e.g. --country DE,GB
   --city <names>          City name(s), e.g. --city Berlin
   --seniority <levels>    junior, middle, senior, staff, principal, lead, ...
@@ -131,13 +133,15 @@ function parseIntFlag(name: string, raw: string | boolean | string[]): number | 
 
 // Long-form flag names each command accepts (parseFlags resolves the short
 // aliases q/n to these before validation). "help"/"h" pass so `search --help`
-// still prints usage.
+// still prints usage. detail takes no --description-format: it always prints
+// the detail endpoint's HTML body stripped to text, so accepting the flag
+// there ignored it silently.
 const KNOWN_FLAGS: Record<string, Set<string>> = {
   search: new Set([
     "query", "category", "city", "company", "country", "facet", "format", "jobage", "limit",
     "page", "region", "remote", "seniority", "skill", "description-format", "no-description", "help", "h",
   ]),
-  detail: new Set(["format", "description-format", "help", "h"]),
+  detail: new Set(["format", "help", "h"]),
 }
 
 async function main(): Promise<number> {
@@ -170,6 +174,18 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "search") {
+    // These options take values, unlike bare --remote and --no-description.
+    // Treating a present-but-empty option as unset silently broadens the query.
+    for (const name of ["query", "company", "country", "region", "city", "seniority", "category", "skill", "description-format"]) {
+      const value = flags[name]
+      if (value !== undefined && (typeof value !== "string" || !value.trim())) {
+        process.stderr.write(
+          JSON.stringify({ error: `--${name} requires a non-empty value`, code: "BAD_ARG" }) + "\n",
+        )
+        return 1
+      }
+    }
+
     const fmt = flags.format !== undefined ? String(flags.format) : "json"
     if (!["json", "table", "plain"].includes(fmt)) {
       process.stderr.write(

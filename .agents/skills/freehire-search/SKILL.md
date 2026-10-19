@@ -101,7 +101,7 @@ field and drops the bodies entirely (fetch a shortlisted job's body with
 `detail`, or re-run the search without the flag).
 
 Facet filters (values come from freehire's controlled vocabularies; comma-separate for OR within a facet):
-- `--region <codes>` — macro-region, e.g. `global`, `eu`, `us`, `apac`, `latam`, `cis`. `--region eu,us`. Use `none` to match jobs whose region could **not** be resolved (see "Partial data" below).
+- `--region <codes>` - macro-region: `global`, `eu`, `uk`, `north_america`, `latam`, `apac`, `mena`, `africa`, `cis`. `--region eu,uk`. `eu` does not include the UK; add `uk` for Europe as a whole. For a single country use `--country` instead - `us` is a country code, not a region, and `--region us` matches nothing. `--region`, `--country` and `--city` form one OR-group, so `--country us` alone scopes to the US. Use `none` to match jobs whose region could **not** be resolved (see "Partial data" below).
 - `--country <codes>` — ISO-3166 alpha-2, e.g. `--country DE,GB`
 - `--city <names>` — city name(s), e.g. `--city Berlin`
 - `--seniority <levels>` — `junior`, `middle`, `senior`, `staff`, `principal`, `lead`, …
@@ -124,7 +124,7 @@ bun run .agents/skills/freehire-search/cli/src/cli.ts detail <slug|url> [--forma
 ```
 
 `slug` is the `id` from a `search` result (e.g. `golang-zensar-2bxu6dxm`). You may
-also pass a full `https://freehire.me/jobs/<slug>` URL. Returns the full (HTML-stripped)
+also pass a full `https://freehire.me/jobs/<slug>` URL. A URL on any other host - including the employer apply link a search result's `url` field carries - is rejected with `BAD_ID` before any request. Returns the full (HTML-stripped)
 description, skills, region/country, and — when the posting is enriched — seniority,
 category, employment type, and salary. `salary` keeps its period when freehire records
 one (`INR 300000–300000/year`, `INR 12000/month`); compare pay only in one period.
@@ -169,6 +169,11 @@ result carries at least `id` (the freehire slug), `title`, `company`, `location`
 omit the description — it would swamp a scannable list. All errors are written to
 **stderr** as `{ "error": "...", "code": "..." }` and the process exits with code `1`.
 
+One diagnostic is not an error: a `--region` (or `--facet regions=`) value outside the
+documented vocabulary - `us` is a country code, not a region - prints
+`{ "warning": "...", "code": "REGION_VALUE_UNKNOWN" }` on **stderr** after the results,
+and the process still exits `0` with stdout a valid JSON document.
+
 ## Partial data
 
 Facets are derived per-posting and can be **incomplete** — geography especially.
@@ -191,11 +196,12 @@ dictionaries never guess). So:
   tracking (apply/save) needs a key, and this skill deliberately does not touch it:
   it is **search + detail only**.
 - `id` in search results is the freehire `public_slug` — pass it as-is to `detail`.
-- `date` is the posting date (`posted_at`); it may be `null` for undated postings.
+- `date` is the posting date as `YYYY-MM-DD` (the date part of the API's `posted_at` timestamp, the shape every portal CLI emits); it may be `null` for undated postings.
 - Facet values are controlled vocabularies. Use `/api/v1/jobs/facets` to see the
   live values (with counts) for a query before filtering.
 - The API retries 429/5xx with exponential backoff; an unreachable API exits
   non-zero with a clear message (best-effort service, see the dependency note above).
-- `search` calls `/api/v1/agent/jobs/search` (public, like the rest). A self-hosted
+- `search` calls `/api/v1/agent/jobs/search` (public, like the rest); `--no-description`
+  calls the lighter `/api/v1/jobs/search`, which serves no full bodies. A self-hosted
   instance older than that endpoint answers 404, and the CLI reports it as an error
   naming the endpoint — never as an empty result set.
