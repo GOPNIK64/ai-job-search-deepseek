@@ -242,6 +242,9 @@ ALLOWED_SKILL_TOOLS = {
     "Bash(bun --version)",
     "Bash(python tools/job_key.py:*)",
     "Bash(python3 tools/job_key.py:*)",
+    # The port's Step 0 dedup query, which keeps the seen-set out of the conversation.
+    "Bash(python tools/rank_state.py keys:*)",
+    "Bash(python3 tools/rank_state.py keys:*)",
 }
 
 # The tools a shipped .claude/agents/*.md may list. These agents read untrusted
