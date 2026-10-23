@@ -160,6 +160,19 @@ class Candidates(RankStateCase):
                 )
                 self.assertEqual(out["excluded_by_tracker"], int(excluded))
 
+    def test_tracker_saved_in_a_legacy_code_page_is_reported_not_a_traceback(self):
+        # A spreadsheet's plain "CSV" save on Windows writes cp1252, not UTF-8.
+        self.write_state({"a": entry()})
+        tracker = self.tmp / "tracker.csv"
+        tracker.write_bytes("date,company,role\r\n2026-08-01,Ørsted,SOC Analyst\r\n".encode("cp1252"))
+        proc = subprocess.run(
+            [sys.executable, str(TOOL), "candidates", "--state", str(self.state), "--tracker", str(tracker)],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("is not UTF-8 text - re-save it as CSV UTF-8", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
     def test_focus_filters_on_title_company_and_stored_fit_notes(self):
         self.write_state(
             {
@@ -245,6 +258,19 @@ class Sweep(RankStateCase):
         self.assertEqual([r["key"] for r in out["newly_expired"]], ["other"])
         self.assertEqual(out["swept"], 1)
         self.assertEqual(self.read_state()["new_past"]["status"], "new")
+
+    def test_excluded_keys_tolerate_spaces_after_commas(self):
+        self.write_state(
+            {
+                "a": entry(status="ranked", deadline="2026-09-01"),
+                "b": entry(status="ranked", deadline="2026-09-01"),
+                "other": entry(status="ranked", deadline="2026-09-01"),
+            }
+        )
+        out = self.run_tool("sweep", "--write", "--exclude", "a, b")
+        self.assertEqual([r["key"] for r in out["newly_expired"]], ["other"])
+        self.assertEqual(out["swept"], 1)
+        self.assertEqual(self.read_state()["b"]["status"], "ranked", "a key scored this run is never swept")
 
     def test_without_write_nothing_is_persisted(self):
         self.write_state({"past": entry(status="ranked", deadline="2026-09-01")})
@@ -1111,6 +1137,45 @@ class Unreachable(RankStateCase):
         )
         self.assertIn("unknown status 'unreachble'", out["errors"][0]["error"])
         self.assertEqual(self.read_state()["a"]["status"], "new", "a rejected result never half-writes an entry")
+
+    def test_malformed_results_are_errors_not_a_traceback(self):
+        self.write_state({"a": entry(), "b": entry(title="Other")})
+        out = self.run_tool(
+            "apply",
+            "--results",
+            self.results(
+                [
+                    7,
+                    "a",
+                    {"key": ["a"], "scores": {}},
+                    {"key": "a", "scores": [90, 80]},
+                    {"key": "b", "scores": {"technical": 80, "experience": 80, "behavioral": 80, "career": 80}},
+                ]
+            ),
+            expect=1,
+        )
+        self.assertEqual(
+            [e["error"] for e in out["errors"]],
+            [
+                "result is not an object",
+                "result is not an object",
+                "no such key in seen_jobs.json",
+                "scores must be an object",
+            ],
+        )
+        self.assertEqual([r["key"] for r in out["ranked"]], ["b"], "valid results in the same batch still apply")
+        self.assertEqual(self.read_state()["a"]["status"], "new")
+
+    def test_an_unknown_gate_verdict_is_an_error_not_a_shortlisted_job(self):
+        scores = {dimension: 90 for dimension in ("technical", "experience", "behavioral", "career")}
+        for field, value in (("location_verdict", "Fail"), ("language_gate", "fail"), ("location_verdict", "REJECT")):
+            with self.subTest(field=field, value=value):
+                self.write_state({"a": entry()})
+                result = {"key": "a", "status": "scored", "scores": scores, field: value}
+                out = self.run_tool("apply", "--results", self.results([result]), expect=1)
+                self.assertEqual(out["ranked"], [], "a deal-breaker spelled differently must not reach the shortlist")
+                self.assertIn(f"unknown {field} {value!r}", out["errors"][0]["error"])
+                self.assertEqual(self.read_state()["a"]["status"], "new", "a rejected result never half-writes an entry")
 
 
 if __name__ == "__main__":
