@@ -6,6 +6,12 @@ framework_version: 1.4.8
 
 <!-- SETUP: Profile statements and section ordering are personalized by running /setup -->
 
+> **Default layout is now `cv/main_example.tex`, a brutalist / old-PC template:** monospace
+> throughout, boxed header, inverted black section bars, hard rules. The moderncv banking
+> template documented below lives at `cv/main_moderncv.tex` and is the ATS-friendly variant:
+> its text layer extracts in reading order, while the brutalist one interleaves sections.
+> Use the moderncv file when the reader is a parser.
+
 ## Template: LaTeX moderncv (Banking Style)
 
 All CVs use the moderncv LaTeX package with the "banking" style and "blue" color scheme.
