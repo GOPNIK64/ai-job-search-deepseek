@@ -402,7 +402,7 @@ Thinking about a PR? Read [CONTRIBUTING.md](CONTRIBUTING.md) first - it explains
 
 - [Mikkel Krogholm](https://github.com/mikkelkrogsholm) ([skills repo](https://github.com/mikkelkrogsholm/skills)) for the job search CLI skills
 - Ported to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) by [Ivan Naumann Thostrup](https://github.com/GOPNIK64)
-- Mascot: humpback whale breaching, video by [Eclipse Chasers](https://www.pexels.com/@eclipse-chasers-1967535445/) via [Pexels](https://www.pexels.com/video/humpback-whale-breach-18680289/), converted to GIF
+- Mascot: humpback whale breaching, video by [Eclipse Chasers](https://www.pexels.com/@eclipse-chasers-716719984/) via [Pexels](https://www.pexels.com/video/humpback-whale-breach-18680289/), converted to GIF
 
 ## License
 
