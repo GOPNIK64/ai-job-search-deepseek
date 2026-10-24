@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/mascot/pip_flight_loop.gif" alt="Pip, the courier bird" width="200">
+  <img src="assets/mascot/whale_loop.gif" alt="A humpback whale breaching" width="360">
 </p>
 
-# AI Job Search
+# AI Job Search — DeepSeek Harness port
 
 *The job search that runs on your machine.*
 
@@ -39,7 +39,7 @@
 
 [![CI](https://github.com/MadsLorentzen/ai-job-search/actions/workflows/ci.yml/badge.svg)](https://github.com/MadsLorentzen/ai-job-search/actions/workflows/ci.yml)
 
-An AI-powered job application framework built on [Claude Code](https://claude.com/claude-code). Fork it, fill in your profile, and let Claude evaluate job postings, tailor your CV, write cover letters, and prepare you for interviews.
+An AI-powered job application framework built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). Fork it, fill in your profile, and let the agents evaluate job postings, tailor your CV, write cover letters, and prepare you for interviews.
 
 > Note: This is an independent open-source project and is not affiliated with, endorsed by, sponsored by, or maintained by Anthropic. Anthropic and Claude Code are referenced only to describe the toolchain this workflow uses.
 >
@@ -66,7 +66,7 @@ Sixty-nine tailored applications, twenty first interviews, and one signed contra
 
 ## What this is
 
-A structured workflow that turns Claude Code into a full-stack job application assistant. The core workflow (self-profiling, fit evaluation, and the drafter-reviewer application pipeline) is **language- and country-agnostic**. The job portal search skills are built for the Danish market (Jobindex, Jobnet, Akademikernes Jobbank, etc.), but the pattern is designed to be swapped for your local job boards.
+A structured workflow that turns DeepSeek Harness into a full-stack job application assistant. The core workflow (self-profiling, fit evaluation, and the drafter-reviewer application pipeline) is **language- and country-agnostic**. The job portal search skills are built for the Danish market (Jobindex, Jobnet, Akademikernes Jobbank, etc.), but the pattern is designed to be swapped for your local job boards.
 
 ```
 /setup          /scrape              /apply <url>
@@ -88,7 +88,7 @@ The framework encodes career guidance best practices, including structured evalu
 
 ## Prerequisites
 
-- [Claude Code](https://claude.com/claude-code) (CLI). Claude Code has no free tier: you need a Claude Pro/Max/Team subscription or Anthropic API credits (pay-per-token, usually cheaper for occasional use). Using a different agent tool (Codex, Antigravity, Gemini CLI)? Start at [`AGENTS.md`](AGENTS.md) - the portal search skills work there out of the box, and [community forks](https://github.com/MadsLorentzen/ai-job-search/discussions/78) adapt the full workflow.
+- **DeepSeek Harness (`dsh`)** with a DeepSeek API key. The `headless` profile reads `DEEPSEEK_API_KEY` from the environment; the desktop profile resolves it from its own credential store. Using a different agent tool? Start at [`AGENTS.md`](AGENTS.md) — the portal search skills work there too, and [community forks](https://github.com/MadsLorentzen/ai-job-search/discussions/78) adapt the full workflow.
 - Python 3.10+
 - [Bun](https://bun.sh) (for job search CLI tools)
 - LaTeX distribution with `lualatex` and `xelatex`: [TeX Live](https://tug.org/texlive/), [MacTeX](https://tug.org/mactex/), [TinyTeX](https://yihui.org/tinytex/), or [MiKTeX](https://miktex.org/). The CV compiles with `lualatex` (pdflatex often fails on modern MiKTeX installs with `fontawesome5` font-expansion errors); the cover letter compiles with `xelatex` because `cover.cls` requires `fontspec`. If using a minimal TeX install such as TinyTeX or BasicTeX, install the extra packages listed in [SETUP.md](SETUP.md#minimal-tex-install-tinytexbasictex).
@@ -127,9 +127,10 @@ For `linkedin-search` and `freehire-search` the install is optional: both have z
 ### 3. Set up your profile
 
 ```bash
-claude
-# Then inside Claude Code:
-/setup
+dsh --profile headless "/setup"
+# or, for an interactive session:
+dsh --profile tui
+# then: /setup
 ```
 
 `/setup` offers three paths: read your `documents/` folder if you have one populated (CV PDF, LinkedIn export, diplomas, reference letters, past applications), import a single CV pasted in chat, or walk through an interview. It auto-detects what you have and asks. Documents-folder mode is idempotent and safe to re-run as you add more material; see `documents/README.md` for the layout.
@@ -400,7 +401,8 @@ Thinking about a PR? Read [CONTRIBUTING.md](CONTRIBUTING.md) first - it explains
 ## Acknowledgements
 
 - [Mikkel Krogholm](https://github.com/mikkelkrogsholm) ([skills repo](https://github.com/mikkelkrogsholm/skills)) for the job search CLI skills
-- Built with [Claude Code](https://claude.com/claude-code) by [Anthropic](https://anthropic.com)
+- Ported to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) by [Ivan Naumann Thostrup](https://github.com/GOPNIK64)
+- Mascot: humpback whale breaching, video by [Eclipse Chasers](https://www.pexels.com/@eclipse-chasers-1967535445/) via [Pexels](https://www.pexels.com/video/humpback-whale-breach-18680289/), converted to GIF
 
 ## License
 
