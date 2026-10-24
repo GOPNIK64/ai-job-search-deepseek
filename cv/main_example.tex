@@ -6,8 +6,9 @@
 %% Compile with: lualatex main_example.tex
 \documentclass[10pt]{article}
 
-\usepackage[a4paper,top=12mm,bottom=12mm,left=13mm,right=13mm]{geometry}
-\usepackage[T1]{fontenc}
+\usepackage[scale=0.80]{geometry}
+\usepackage{iftex}
+\ifpdftex\usepackage[T1]{fontenc}\fi
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
 \usepackage{xcolor}
@@ -83,11 +84,11 @@ how you drive them through changes and how you review their output before it shi
 
 {\footnotesize
 \begin{itemize}
-  \item [Scope: what you work on, decisions you take, review, contact. Volume counts if measured.]
-  \item [Capability 1: what you build, with the stack named.]
-  \item [Capability 2: integrations, fallbacks, error handling.]
-  \item [Capability 3: performance work. State the effect, never the mechanism.]
-  \item [Quality: tests, review, documentation.]
+  \item {Scope: what you work on, decisions you take, review, contact. Volume counts if measured.}
+  \item {Capability 1: what you build, with the stack named.}
+  \item {Capability 2: integrations, fallbacks, error handling.}
+  \item {Capability 3: performance work. State the effect, never the mechanism.}
+  \item {Quality: tests, review, documentation.}
 \end{itemize}}
 
 % ---------- EDUCATION ----------
